@@ -45,5 +45,5 @@ This is a Streamlit-based Schema.org structured data generator that helps you bu
 1. Clone the repo:
 
    ```bash
-   git clone https://github.com/rajeshtudu/schema-generator.git
+   git clone https://github.com/rajeshtudu/Schema-Generator
    cd schema-generator  
