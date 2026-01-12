@@ -850,9 +850,10 @@ st.markdown("## Output")
 if not schema and not (gtag_enabled and gtag_id):
     st.info("Fill in the required fields above to generate schema, or add a Google tag.")
 else:
-    # JSON-LD mode = raw JSON only
     if output_mode == "JSON-LD":
+        # 1) JSON-LD schema (pure JSON)
         json_str = json.dumps(schema, indent=2) if schema else "{}"
+        st.markdown("### JSON-LD schema")
         st.code(json_str, language="json")
         st.download_button(
             label="Download JSON-LD",
@@ -861,8 +862,19 @@ else:
             mime="application/json",
         )
 
-    # Script Tag mode = <script type="application/ld+json"> + optional gtag
-    else:
+        # 2) Optional: Google tag snippet (HTML)
+        if gtag_enabled and gtag_id:
+            gtag_code = google_gtag_script(gtag_id)
+            st.markdown("### Google tag (gtag.js)")
+            st.code(gtag_code, language="html")
+            st.download_button(
+                label="Download Google tag snippet",
+                data=gtag_code,
+                file_name="google-tag.html",
+                mime="text/html",
+            )
+
+    else:  # Script Tag
         html_blocks = []
 
         if schema:
