@@ -820,11 +820,15 @@ st.markdown("## Output")
 
 if output_mode == "JSON-LD":
     st.code(json.dumps(schema, indent=2), language="json")
-else:
+
+else:  # Script Tag
+    html = ""
+
     if isinstance(schema, list):
-        st.code(
-            "\n\n".join(to_script_tag(block) for block in schema),
-            language="html"
+        html = "\n\n".join(
+            to_script_tag(block) for block in schema
         )
     else:
-        st.code(to_script_tag(schema), language="html")
+        html = to_script_tag(schema)
+
+    st.code(html, language="html")

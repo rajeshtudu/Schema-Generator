@@ -1,6 +1,5 @@
 import json
 
-
 def clean_list(text: str):
     if not text:
         return []
@@ -10,7 +9,7 @@ def clean_list(text: str):
 
 def to_script_tag(schema: dict) -> str:
     return (
-        '<script type="application/ld+json">'
-        f'{json.dumps(schema, ensure_ascii=False)}'
+        '<script type="application/ld+json">\n'
+        f'{json.dumps(schema, ensure_ascii=False, indent=2)}\n'
         '</script>'
     )
