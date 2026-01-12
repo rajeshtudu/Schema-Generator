@@ -1,3 +1,6 @@
+import re
+
+
 def _clean_schema(obj):
     """
     Recursively remove keys with empty values:
@@ -54,109 +57,100 @@ def entity_recommendations(page_type: str):
 
 
 # -------------------------
-# Homepage Schema
+# Helpers
 # -------------------------
-def homepage_schema(data: dict):
+def _slugify_type(t: str) -> str:
     """
-    Homepage JSON-LD to match the provided document:
-    - 1st block: FurnitureStore (LocalBusiness subtype) with makesOffer, address, geo, etc.
-    - 2nd block: FAQPage
-    Returns: List[dict]
+    "LocalBusiness" -> "localbusiness"
+    "FurnitureStore" -> "furniturestore"
     """
-    base_url = (data.get("site_url") or "").rstrip("/")
-    store_id = f"{base_url}/#furniturestore" if base_url else None
+    t = (t or "").strip()
+    return re.sub(r"[^a-z0-9]+", "", t.lower())
 
-    # ---- makesOffer (list of Offer) ----
-    offers_in = data.get("makes_offer", [])  # list of {name, description, url}
-    makes_offer = []
-    for o in offers_in:
-        makes_offer.append({
-            "@type": "Offer",
-            "name": o.get("name"),
-            "description": o.get("description"),
-            "url": o.get("url"),
-        })
 
-    # ---- areaServed (matches your doc shape: list -> Country -> geo GeoShape + containsPlace Cities) ----
-    area_served_in = data.get("area_served", [])  # list of country blocks
-    area_served = []
-    for a in area_served_in:
-        country = {
-            "@type": a.get("type") or "Country",
-            "name": a.get("name"),
+def _build_has_map(has_map_in):
+    """
+    Accepts:
+      - dict: {"@type":"Map","@id":"...","url":"..."}
+      - str:  "https://maps.google..."
+    Returns:
+      - dict or None
+    """
+    if isinstance(has_map_in, dict):
+        return {
+            "@type": has_map_in.get("@type") or "Map",
+            "@id": has_map_in.get("@id"),
+            "url": has_map_in.get("url"),
         }
+    if isinstance(has_map_in, str) and has_map_in.strip():
+        return {"@type": "Map", "url": has_map_in.strip()}
+    return None
 
-        # keep the document's shape (GeoShape with "postalcode" key if you pass it that way)
-        geo = a.get("geo")
-        if isinstance(geo, dict):
-            country["geo"] = {
-                "@type": geo.get("type") or "GeoShape",
-                # your provided document uses "postalcode" (lowercase); support either input key
-                "postalcode": geo.get("postalcode") if geo.get("postalcode") is not None else geo.get("postalCode"),
-            }
 
-        contains = []
-        for c in a.get("contains_place", []):  # list of cities
-            contains.append({
-                "@type": c.get("type") or "City",
-                "name": c.get("name"),
-                "url": c.get("url"),  # can be a list (like your doc) or a string
-            })
-        if contains:
-            country["containsPlace"] = contains
+def _build_aggregate_rating(rating_in: dict):
+    """
+    rating_in example:
+      {
+        "name": "...",
+        "rating_value": "4.8",
+        "best_rating": "5",
+        "review_count": "123",
+        "additional_property": [{"name":"...","value":"..."}]
+      }
+    """
+    rating_in = rating_in or {}
+    if not rating_in:
+        return None
 
-        area_served.append(country)
-
-    # ---- aggregateRating (with additionalProperty list) ----
-    rating_in = data.get("aggregate_rating") or {}
     additional_props = []
-    for p in rating_in.get("additional_property", []):
+    for p in rating_in.get("additional_property", []) or []:
         additional_props.append({
             "@type": "PropertyValue",
             "name": p.get("name"),
             "value": p.get("value"),
         })
 
-    aggregate_rating = None
-    if rating_in:
-        aggregate_rating = {
-            "@type": "AggregateRating",
-            "name": rating_in.get("name"),
-            "ratingValue": rating_in.get("rating_value"),
-            "bestRating": rating_in.get("best_rating"),
-            "reviewCount": rating_in.get("review_count"),
-            "additionalProperty": additional_props,
-        }
+    return {
+        "@type": "AggregateRating",
+        "name": rating_in.get("name"),
+        "ratingValue": rating_in.get("rating_value"),
+        "bestRating": rating_in.get("best_rating"),
+        "reviewCount": rating_in.get("review_count"),
+        "additionalProperty": additional_props,
+    }
 
-    # ---- founders (list of Person) ----
-    founders_in = data.get("founders", [])  # list of persons
+
+def _build_founders(founders_in, works_for_id: str | None):
+    """
+    founders_in: list of {name, job_title, same_as}
+    """
     founders = []
-    for f in founders_in:
-        founders.append({
+    for f in (founders_in or []):
+        person = {
             "@type": "Person",
             "name": f.get("name"),
             "jobTitle": f.get("job_title"),
-            "worksFor": {"@id": store_id} if store_id else None,
             "sameAs": f.get("same_as", []),
-        })
-
-    # ---- hasMap (object Map) ----
-    has_map_in = data.get("has_map")  # e.g. {"@type":"Map","@id":"https://schema.org/VenueMap","url":"..."}
-    has_map = None
-    if isinstance(has_map_in, dict):
-        has_map = {
-            "@type": has_map_in.get("@type") or "Map",
-            "@id": has_map_in.get("@id"),
-            "url": has_map_in.get("url"),
         }
-    elif isinstance(has_map_in, str) and has_map_in.strip():
-        # if you only have a URL, still allow it (but your doc uses Map object)
-        has_map = {"@type": "Map", "url": has_map_in}
+        if works_for_id:
+            person["worksFor"] = {"@id": works_for_id}
+        founders.append(person)
+    return founders
 
-    # ---- mainEntityOfPage ----
-    meop_in = data.get("main_entity_of_page") or {}
+
+def _build_main_entity_of_page_webpage(meop_in: dict, fallback_url: str | None):
+    """
+    Builds a WebPage object for mainEntityOfPage when you pass:
+      main_entity_of_page = {name,url,@id,additionalType/about/mentions}
+
+    This is the MK Furnishings style.
+    """
+    meop_in = meop_in or {}
+    if not meop_in:
+        return None
+
     about_list = []
-    for a in meop_in.get("about", []):
+    for a in (meop_in.get("about", []) or []):
         about_list.append({
             "@type": a.get("type") or a.get("@type") or "Thing",
             "name": a.get("name"),
@@ -164,37 +158,235 @@ def homepage_schema(data: dict):
         })
 
     mentions_list = []
-    for m in meop_in.get("mentions", []):
+    for m in (meop_in.get("mentions", []) or []):
         mentions_list.append({
             "@type": m.get("type") or m.get("@type") or "Thing",
             "name": m.get("name"),
             "sameAs": m.get("same_as") if m.get("same_as") is not None else m.get("sameAs"),
         })
 
-    main_entity_of_page = None
-    if meop_in:
-        main_entity_of_page = {
-            "@type": "WebPage",
-            "name": meop_in.get("name"),
-            "url": meop_in.get("url") or data.get("site_url"),
-            "@id": meop_in.get("@id") or meop_in.get("id") or (data.get("site_url")),
-            "additionalType": meop_in.get("additional_type") if meop_in.get("additional_type") is not None else meop_in.get("additionalType", []),
-            "about": about_list,
-            "mentions": mentions_list,
+    return {
+        "@type": "WebPage",
+        "name": meop_in.get("name"),
+        "url": meop_in.get("url") or fallback_url,
+        "@id": meop_in.get("@id") or meop_in.get("id") or fallback_url,
+        "additionalType": (
+            meop_in.get("additional_type")
+            if meop_in.get("additional_type") is not None
+            else meop_in.get("additionalType", [])
+        ),
+        "about": about_list,
+        "mentions": mentions_list,
+    }
+
+
+def _build_website_schema(website_in: dict, base_url: str | None, fallback_name: str | None, fallback_url: str | None):
+    """
+    Optional separate WebSite block. Supply data["website_schema"] if you want it.
+    Example:
+      website_schema={
+        "name": "...",
+        "url": "https://...",
+        "sameAs": [...],
+        "potentialAction": {...}   # SearchAction optional
+      }
+    """
+    website_in = website_in or {}
+    if not website_in:
+        return None
+
+    return {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "@id": website_in.get("@id") or (f"{base_url}/#website" if base_url else None),
+        "name": website_in.get("name") or fallback_name,
+        "url": website_in.get("url") or fallback_url,
+        "sameAs": website_in.get("sameAs"),
+        "potentialAction": website_in.get("potentialAction"),
+    }
+
+
+def _build_identifier(data: dict):
+    """
+    Supports BOTH styles:
+      A) propertyID + single value:
+         identifier_property_id, identifier_value
+      B) value: list
+         identifier_values
+    """
+    if data.get("identifier_property_id") or data.get("identifier_value"):
+        return {
+            "@type": "PropertyValue",
+            "propertyID": data.get("identifier_property_id"),
+            "value": data.get("identifier_value"),
         }
 
-    # ---- FurnitureStore block ----
-    store_schema = {
+    if data.get("identifier_values"):
+        return {
+            "@type": "PropertyValue",
+            "value": data.get("identifier_values", []),
+        }
+
+    return None
+
+
+def _build_makes_offer(makes_offer_in):
+    """
+    makes_offer_in: list of {name, description, url}
+    """
+    makes_offer = []
+    for o in (makes_offer_in or []):
+        makes_offer.append({
+            "@type": "Offer",
+            "name": o.get("name"),
+            "description": o.get("description"),
+            "url": o.get("url"),
+        })
+    return makes_offer
+
+
+def _build_has_offer_catalog(data: dict):
+    """
+    Universal hasOfferCatalog builder.
+
+    Inputs supported:
+      - offer_catalog_services: [{name, description, url}, ...]
+      - services: same as above (fallback)
+      - offer_catalog_mode:
+          * "service_list" (default): itemListElement is list of Service (Cloudavize style)
+          * "offer_wrapped": itemListElement is Offer->itemOffered->Service (your local_business_schema style)
+      - offer_catalog_name / catalog_name: optional
+    """
+    catalog_services = data.get("offer_catalog_services") or data.get("services") or []
+    if not catalog_services:
+        return None
+
+    catalog_mode = (data.get("offer_catalog_mode") or "service_list").strip().lower()
+    catalog_name = data.get("offer_catalog_name") or data.get("catalog_name")
+
+    if catalog_mode == "offer_wrapped":
+        item_list = [
+            {
+                "@type": "Offer",
+                "itemOffered": {
+                    "@type": "Service",
+                    "name": s.get("name"),
+                    "description": s.get("description"),
+                    "url": s.get("url"),
+                }
+            }
+            for s in catalog_services
+        ]
+    else:
+        item_list = [
+            {
+                "@type": "Service",
+                "name": s.get("name"),
+                "description": s.get("description"),
+                "url": s.get("url"),
+            }
+            for s in catalog_services
+        ]
+
+    return {
+        "@type": "OfferCatalog",
+        "name": catalog_name,
+        "itemListElement": item_list
+    }
+
+
+def _build_faq_schema(faqs):
+    """
+    faqs: list of {question, answer}
+    Returns FAQPage dict or None
+    """
+    faqs = faqs or []
+    if not faqs:
+        return None
+
+    return {
         "@context": "https://schema.org",
-        "@type": data.get("business_type") or "FurnitureStore",
-        "@id": store_id,  # not in your sample, but helps founders/links resolve cleanly
-        "makesOffer": makes_offer,
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": f.get("question"),
+                "acceptedAnswer": {"@type": "Answer", "text": f.get("answer")},
+            }
+            for f in faqs
+        ],
+    }
+
+
+# -------------------------
+# UNIVERSAL HOMEPAGE SCHEMA
+# -------------------------
+def homepage_schema(data: dict):
+    """
+    UNIVERSAL Homepage JSON-LD generator that works for ANY business type.
+
+    Requirements:
+      - data["business_type"] is REQUIRED (no defaults)
+
+    Optional modules (included only if provided):
+      - makesOffer (retail categories / offers)
+      - hasOfferCatalog (service catalog)
+      - FAQPage (separate JSON-LD block)
+      - WebSite (separate JSON-LD block)
+      - mainEntityOfPage (WebPage object)
+      - identifier (propertyID/value OR list of values)
+      - aggregateRating, founders, areaServed, hasMap, openingHoursSpecification, etc.
+
+    Returns:
+      List[dict] (one or more JSON-LD blocks)
+    """
+    business_type = (data.get("business_type") or "").strip()
+    if not business_type:
+        raise ValueError("homepage_schema: 'business_type' is required (e.g. 'BeautySalon', 'LocalBusiness', 'Store').")
+
+    base_url = (data.get("site_url") or "").rstrip("/")
+    id_fragment = (data.get("id_fragment") or _slugify_type(business_type) or "business")
+    entity_id = f"{base_url}/#{id_fragment}" if base_url else None
+
+    # Common builds
+    has_map = _build_has_map(data.get("has_map"))
+    aggregate_rating = _build_aggregate_rating(data.get("aggregate_rating") or {})
+    founders = _build_founders(data.get("founders") or [], entity_id)
+    identifier = _build_identifier(data)
+
+    # Optional: WebPage object as mainEntityOfPage (MK Furnishings style)
+    main_entity_of_page_webpage = _build_main_entity_of_page_webpage(
+        data.get("main_entity_of_page") or {},
+        fallback_url=data.get("site_url")
+    )
+
+    # Optional: string URL mainEntityOfPage (Cloudavize style maps CID)
+    # If you provide this, it will override the object (string vs object cannot both be correct at once).
+    main_entity_of_page_url = (data.get("main_entity_of_page_url") or "").strip()
+    main_entity_of_page = main_entity_of_page_url or main_entity_of_page_webpage
+
+    # Offers / Catalog modules
+    makes_offer = _build_makes_offer(data.get("makes_offer"))
+    has_offer_catalog = _build_has_offer_catalog(data)
+
+    # areaServed: pass-through schema-ready list/dict
+    area_served = data.get("area_served", [])
+
+    business_schema = {
+        "@context": "https://schema.org",
+        "@type": business_type,
+        "@id": entity_id,
+
         "name": data.get("org_name") or data.get("name"),
+        "legalName": data.get("legal_name"),
         "description": data.get("description"),
         "image": data.get("image"),
+        "logo": data.get("logo"),
         "priceRange": data.get("price_range"),
         "telephone": data.get("telephone"),
         "email": data.get("email"),
+        "url": data.get("site_url"),
+
         "address": {
             "@type": "PostalAddress",
             "streetAddress": data.get("street"),
@@ -208,45 +400,45 @@ def homepage_schema(data: dict):
             "latitude": data.get("lat"),
             "longitude": data.get("lng"),
         },
+
         "hasMap": has_map,
+        "openingHoursSpecification": data.get("opening_hours_spec", []),
+
+        "sameAs": data.get("same_as", []),
         "alternateName": data.get("alternate_names", []),
+
         "areaServed": area_served,
-        "logo": data.get("logo"),
-        "openingHoursSpecification": data.get("opening_hours_spec", []),  # already shaped list of OpeningHoursSpecification
         "aggregateRating": aggregate_rating,
         "founder": founders,
-        "identifier": {
-            "@type": "PropertyValue",
-            "value": data.get("identifier_values", []),  # list of URLs like your doc
-        },
-        "sameAs": data.get("same_as", []),
+        "identifier": identifier,
         "mainEntityOfPage": main_entity_of_page,
+
+        # business-wide optional field
+        "knowsLanguage": data.get("knows_language"),
+
+        # modules
+        "makesOffer": makes_offer,
+        "hasOfferCatalog": has_offer_catalog,
     }
 
-    # ---- FAQPage block (2nd JSON-LD object) ----
-    faqs = data.get("faqs", [])  # list of {question, answer_html_or_text}
-    faq_schema = {
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        "mainEntity": [
-            {
-                "@type": "Question",
-                "name": f.get("question"),
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": f.get("answer"),
-                },
-            }
-            for f in faqs
-        ],
-    }
+    blocks = [_clean_schema(business_schema)]
 
-    # Return as two separate blocks (matches the document you shared)
-    return [
-        _clean_schema(store_schema),
-        _clean_schema(faq_schema),
-    ]
+    # Optional separate WebSite block (recommended for basically all sites)
+    website_block = _build_website_schema(
+        website_in=data.get("website_schema") or {},
+        base_url=base_url,
+        fallback_name=data.get("site_name") or data.get("name"),
+        fallback_url=data.get("site_url"),
+    )
+    if website_block:
+        blocks.append(_clean_schema(website_block))
 
+    # Optional FAQPage block
+    faq_block = _build_faq_schema(data.get("faqs", []))
+    if faq_block:
+        blocks.append(_clean_schema(faq_block))
+
+    return blocks
 
 
 # -------------------------
@@ -407,7 +599,7 @@ def collection_schema(data: dict):
 
 
 # -------------------------
-# YOUR EXISTING LOCAL BUSINESS SCHEMA
+# Local Business Schema (kept; note it still defaults to LocalBusiness)
 # -------------------------
 def local_business_schema(data: dict):
     schema = {
@@ -522,7 +714,7 @@ def local_business_schema(data: dict):
 
 
 # -------------------------
-# YOUR EXISTING PRODUCT SCHEMA
+# Product Schema
 # -------------------------
 def product_schema(data: dict):
     schema = {
