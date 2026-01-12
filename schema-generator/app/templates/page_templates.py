@@ -1,3 +1,4 @@
+from app.utils.schema_helpers import to_script_tag
 import re
 
 
@@ -866,3 +867,15 @@ def product_schema(data: dict):
         }
 
     return _clean_schema(schema)
+
+def render_schema_blocks(blocks: list[dict]) -> str:
+    """
+    Converts schema dict blocks into JSON-LD <script> tags
+    using the shared helper.
+    """
+    if not blocks:
+        return ""
+
+    return "\n\n".join(
+        to_script_tag(block) for block in blocks
+    )
