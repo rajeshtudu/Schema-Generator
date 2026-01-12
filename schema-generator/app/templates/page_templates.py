@@ -138,24 +138,70 @@ def _build_founders(founders_in, works_for_id: str | None):
     return founders
 
 
+# ✅ NEW: build nested about = Thing + sameAs[] + hasPart[]
+def _build_about_nested(about_in):
+    """
+    Accepts:
+      about: [
+        {
+          "name": "Furniture",
+          "same_as": ["wiki", "wikidata"],
+          "has_part": [
+            {"name":"Bed","same_as":["wiki","wikidata"]},
+            ...
+          ]
+        }
+      ]
+
+    Returns schema-ready:
+      about: [
+        {
+          "@type":"Thing",
+          "name":"Furniture",
+          "sameAs":[...],
+          "hasPart":[{"@type":"Thing","name":"Bed","sameAs":[...]}]
+        }
+      ]
+    """
+    about_in = about_in or []
+    about_list = []
+
+    for t in about_in:
+        parent = {
+            "@type": t.get("@type") or t.get("type") or "Thing",
+            "name": t.get("name"),
+            "sameAs": t.get("same_as") if t.get("same_as") is not None else t.get("sameAs", []),
+        }
+
+        parts = []
+        for p in (t.get("has_part") or t.get("hasPart") or []):
+            parts.append({
+                "@type": p.get("@type") or p.get("type") or "Thing",
+                "name": p.get("name"),
+                "sameAs": p.get("same_as") if p.get("same_as") is not None else p.get("sameAs", []),
+            })
+
+        if parts:
+            parent["hasPart"] = parts
+
+        about_list.append(parent)
+
+    return about_list
+
+
 def _build_main_entity_of_page_webpage(meop_in: dict, fallback_url: str | None):
     """
     Builds a WebPage object for mainEntityOfPage when you pass:
       main_entity_of_page = {name,url,@id,additionalType/about/mentions}
 
-    This is the MK Furnishings style.
+    Supports nested about structure (Thing + sameAs[] + hasPart[]).
     """
     meop_in = meop_in or {}
     if not meop_in:
         return None
 
-    about_list = []
-    for a in (meop_in.get("about", []) or []):
-        about_list.append({
-            "@type": a.get("type") or a.get("@type") or "Thing",
-            "name": a.get("name"),
-            "sameAs": a.get("same_as") if a.get("same_as") is not None else a.get("sameAs"),
-        })
+    # ✅ UPDATED: use nested about builder
+    about_list = _build_about_nested(meop_in.get("about"))
 
     mentions_list = []
     for m in (meop_in.get("mentions", []) or []):
@@ -328,15 +374,6 @@ def homepage_schema(data: dict):
     Requirements:
       - data["business_type"] is REQUIRED (no defaults)
 
-    Optional modules (included only if provided):
-      - makesOffer (retail categories / offers)
-      - hasOfferCatalog (service catalog)
-      - FAQPage (separate JSON-LD block)
-      - WebSite (separate JSON-LD block)
-      - mainEntityOfPage (WebPage object)
-      - identifier (propertyID/value OR list of values)
-      - aggregateRating, founders, areaServed, hasMap, openingHoursSpecification, etc.
-
     Returns:
       List[dict] (one or more JSON-LD blocks)
     """
@@ -360,8 +397,7 @@ def homepage_schema(data: dict):
         fallback_url=data.get("site_url")
     )
 
-    # Optional: string URL mainEntityOfPage (Cloudavize style maps CID)
-    # If you provide this, it will override the object (string vs object cannot both be correct at once).
+    # Optional: string URL mainEntityOfPage
     main_entity_of_page_url = (data.get("main_entity_of_page_url") or "").strip()
     main_entity_of_page = main_entity_of_page_url or main_entity_of_page_webpage
 
@@ -413,8 +449,10 @@ def homepage_schema(data: dict):
         "identifier": identifier,
         "mainEntityOfPage": main_entity_of_page,
 
-        # business-wide optional field
+        # business-wide optional fields
         "knowsLanguage": data.get("knows_language"),
+        "additionalType": data.get("additional_types", []),  # ✅ ADDED
+        "knowsAbout": data.get("knows_about", []),           # ✅ ADDED
 
         # modules
         "makesOffer": makes_offer,
@@ -423,7 +461,7 @@ def homepage_schema(data: dict):
 
     blocks = [_clean_schema(business_schema)]
 
-    # Optional separate WebSite block (recommended for basically all sites)
+    # Optional separate WebSite block
     website_block = _build_website_schema(
         website_in=data.get("website_schema") or {},
         base_url=base_url,
@@ -599,7 +637,7 @@ def collection_schema(data: dict):
 
 
 # -------------------------
-# Local Business Schema (kept; note it still defaults to LocalBusiness)
+# Local Business Schema
 # -------------------------
 def local_business_schema(data: dict):
     """
@@ -609,22 +647,16 @@ def local_business_schema(data: dict):
     Keeps your existing Streamlit Local Business form keys/toggles unchanged.
     """
 
-    # Keep old behavior: default to LocalBusiness if not provided
     business_type = (data.get("business_type") or "LocalBusiness").strip()
-
-    # Local business form uses `url` key; universal homepage uses `site_url`
     site_url = (data.get("url") or "").strip()
     if not site_url:
         raise ValueError("local_business_schema: 'url' is required.")
 
-    # Map LocalBusiness inputs -> universal homepage_schema inputs
     adapted = {
-        # REQUIRED by homepage_schema
         "business_type": business_type,
         "site_url": site_url,
         "name": data.get("name"),
 
-        # optional common fields
         "legal_name": data.get("legal_name"),
         "description": data.get("description"),
         "telephone": data.get("telephone"),
@@ -642,38 +674,27 @@ def local_business_schema(data: dict):
         "lng": data.get("lng"),
     }
 
-    # Optional: geo (homepage_schema includes geo object always but empty values are cleaned)
-    # Optional: rating -> homepage_schema expects aggregate_rating shape
     if data.get("rating_enabled"):
         adapted["aggregate_rating"] = {
             "rating_value": data.get("rating_value"),
             "review_count": data.get("review_count"),
         }
 
-    # Optional: hasMap
     if data.get("map_enabled"):
-        adapted["has_map"] = data.get("map_url")  # can be string
+        adapted["has_map"] = data.get("map_url")
 
-    # Optional: sameAs
     if data.get("sameas_enabled"):
         adapted["same_as"] = data.get("same_as", [])
 
-    # Optional: additionalType (your old local schema had it)
     if data.get("additional_type_enabled"):
         adapted["additional_types"] = data.get("additional_types", [])
-        # If you *want* additionalType on the business entity, you can support it in homepage_schema later.
-        # For now we leave it out because homepage_schema doesn't include it.
 
-    # Optional: alternateName
     if data.get("alternate_name_enabled"):
         adapted["alternate_names"] = data.get("alternate_names", [])
 
-    # Optional: knowsAbout (your old local schema had it)
     if data.get("knows_about_enabled"):
         adapted["knows_about"] = data.get("knows_about", [])
-        # Same note as additionalType: homepage_schema doesn't output knowsAbout currently.
 
-    # Optional: areaServed (build same object as before)
     if data.get("area_served_enabled"):
         adapted["area_served"] = {
             "@type": "AdministrativeArea",
@@ -682,7 +703,6 @@ def local_business_schema(data: dict):
             "containsPlace": [{"@type": "City", "name": c} for c in data.get("served_cities", [])],
         }
 
-    # Optional: openingHoursSpecification (convert your simple list into schema-ready list)
     if data.get("hours_enabled"):
         adapted["opening_hours_spec"] = [
             {
@@ -694,13 +714,10 @@ def local_business_schema(data: dict):
             for h in data.get("opening_hours", [])
         ]
 
-    # Optional: identifier (propertyID + value)
     if data.get("identifier_enabled"):
         adapted["identifier_property_id"] = data.get("identifier_property_id")
         adapted["identifier_value"] = data.get("identifier_value")
 
-    # Optional: founder (your old local schema used single founder object)
-    # Universal homepage_schema supports founders list, so we convert it
     if data.get("founder_enabled"):
         adapted["founders"] = [{
             "name": data.get("founder_name"),
@@ -708,23 +725,19 @@ def local_business_schema(data: dict):
             "same_as": data.get("founder_same_as", []),
         }]
 
-    # Optional: language
     if data.get("language_enabled"):
         adapted["knows_language"] = data.get("knows_language")
 
-    # Optional: hasOfferCatalog (use your old wrapped-offer style)
     if data.get("catalog_enabled"):
         adapted["offer_catalog_mode"] = "offer_wrapped"
         adapted["offer_catalog_name"] = data.get("catalog_name")
         adapted["offer_catalog_services"] = data.get("services", [])
 
-    # IMPORTANT: Local Business page should NOT emit extra homepage blocks
     adapted["website_schema"] = {}
     adapted["faqs"] = []
 
-    blocks = homepage_schema(adapted)  # returns list of blocks
-    return blocks[0]                  # return only the business entity dict
-
+    blocks = homepage_schema(adapted)
+    return blocks[0]
 
 
 # -------------------------
