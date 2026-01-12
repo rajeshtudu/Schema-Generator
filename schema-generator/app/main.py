@@ -319,7 +319,6 @@ if page_type == "Homepage":
             main_entity_of_page_url = st.text_input("mainEntityOfPage URL (string)", value="")
 
     data = {
-        "homepage_entity_type": homepage_entity_type,
         "business_type": business_type,
         "site_url": site_url,
         "name": name,
