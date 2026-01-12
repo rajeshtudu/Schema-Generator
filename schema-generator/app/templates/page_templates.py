@@ -755,20 +755,24 @@ def local_business_schema(data: dict):
     Local Business page schema (single-location page).
     Reuses universal homepage_schema() internally, but returns ONLY the business entity (dict),
     not the extra WebSite/FAQ blocks.
-    Keeps your existing Streamlit Local Business form keys/toggles unchanged.
     """
 
     business_type = (data.get("business_type") or "LocalBusiness").strip()
     site_url = (data.get("url") or "").strip()
-    if not site_url:
-        raise ValueError("local_business_schema: 'url' is required.")
+    name = (data.get("name") or "").strip()
 
+    # If required fields missing, just return empty schema instead of raising
+    if not site_url or not name:
+        return {}
+
+    # Map Local Business form fields into the "homepage_schema" input shape
     adapted = {
         "business_type": business_type,
         "site_url": site_url,
-        "name": data.get("name"),
+        "name": name,
 
-        "legal_name": data.get("legal_name"),
+        # homepage_schema expects "org_name", not "legal_name"
+        "org_name": data.get("legal_name"),
         "description": data.get("description"),
         "telephone": data.get("telephone"),
         "email": data.get("email"),
@@ -784,12 +788,6 @@ def local_business_schema(data: dict):
         "lat": data.get("lat"),
         "lng": data.get("lng"),
     }
-
-    if data.get("rating_enabled"):
-        adapted["aggregate_rating"] = {
-            "rating_value": data.get("rating_value"),
-            "review_count": data.get("review_count"),
-        }
 
     if data.get("map_enabled"):
         adapted["has_map"] = data.get("map_url")
@@ -829,13 +827,6 @@ def local_business_schema(data: dict):
         adapted["identifier_property_id"] = data.get("identifier_property_id")
         adapted["identifier_value"] = data.get("identifier_value")
 
-    if data.get("founder_enabled"):
-        adapted["founders"] = [{
-            "name": data.get("founder_name"),
-            "job_title": data.get("founder_job_title"),
-            "same_as": data.get("founder_same_as", []),
-        }]
-
     if data.get("language_enabled"):
         adapted["knows_language"] = data.get("knows_language")
 
@@ -844,11 +835,43 @@ def local_business_schema(data: dict):
         adapted["offer_catalog_name"] = data.get("catalog_name")
         adapted["offer_catalog_services"] = data.get("services", [])
 
+    # No extra WebSite/FAQ for the LB generator
     adapted["website_schema"] = {}
     adapted["faqs"] = []
 
-    blocks = homepage_schema(adapted)
-    return blocks[0]
+    # Build base entity via homepage_schema
+    base = homepage_schema(adapted)
+
+    if isinstance(base, list):
+        entity = base[0]  # first block is always the business entity
+    else:
+        entity = base
+
+    # Local-business-only extras that homepage_schema doesn't handle:
+    if data.get("rating_enabled"):
+        rating_cfg = {
+            "rating_value": data.get("rating_value"),
+            "review_count": data.get("review_count"),
+        }
+        rating = _build_aggregate_rating(rating_cfg)
+        if rating:
+            # remove empty keys from rating before attaching
+            entity["aggregateRating"] = _clean_schema(rating)
+
+    if data.get("founder_enabled") and data.get("founder_name"):
+        founders = _build_founders(
+            [{
+                "name": data.get("founder_name"),
+                "job_title": data.get("founder_job_title"),
+                "same_as": data.get("founder_same_as", []),
+            }],
+            works_for_id=entity.get("@id")
+        )
+        if founders:
+            # single founder => object; multiple => list
+            entity["founder"] = founders[0] if len(founders) == 1 else founders
+
+    return _clean_schema(entity)
 
 
 # -------------------------
