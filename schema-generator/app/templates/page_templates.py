@@ -771,7 +771,7 @@ def local_business_schema(data: dict):
         "site_url": site_url,
         "name": name,
 
-        # homepage_schema expects "org_name", not "legal_name"
+        # homepage_schema expects "org_name"
         "org_name": data.get("legal_name"),
         "description": data.get("description"),
         "telephone": data.get("telephone"),
@@ -843,7 +843,7 @@ def local_business_schema(data: dict):
     base = homepage_schema(adapted)
 
     if isinstance(base, list):
-        entity = base[0]  # first block is always the business entity
+        entity = base[0]  # first block is the business entity
     else:
         entity = base
 
@@ -855,7 +855,6 @@ def local_business_schema(data: dict):
         }
         rating = _build_aggregate_rating(rating_cfg)
         if rating:
-            # remove empty keys from rating before attaching
             entity["aggregateRating"] = _clean_schema(rating)
 
     if data.get("founder_enabled") and data.get("founder_name"):
@@ -868,7 +867,6 @@ def local_business_schema(data: dict):
             works_for_id=entity.get("@id")
         )
         if founders:
-            # single founder => object; multiple => list
             entity["founder"] = founders[0] if len(founders) == 1 else founders
 
     return _clean_schema(entity)
