@@ -1,4 +1,5 @@
-from app.utils.schema_helpers import to_script_tag
+from utils.schema_helpers import to_script_tag
+
 import re
 
 
