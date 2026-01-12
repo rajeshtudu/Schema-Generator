@@ -869,14 +869,20 @@ def product_schema(data: dict):
 
     return _clean_schema(schema)
 
-def render_schema_blocks(blocks: list[dict]) -> str:
+def render_schema_blocks(schema) -> str:
     """
-    Converts schema dict blocks into JSON-LD <script> tags
-    using the shared helper.
+    Accepts:
+      - dict (single schema)
+      - list[dict] (multiple schemas)
+    Returns JSON-LD <script> tags.
     """
-    if not blocks:
+    if not schema:
         return ""
 
-    return "\n\n".join(
-        to_script_tag(block) for block in blocks
-    )
+    if isinstance(schema, dict):
+        return to_script_tag(schema)
+
+    if isinstance(schema, list):
+        return "\n\n".join(to_script_tag(block) for block in schema)
+
+    raise TypeError("render_schema_blocks expects dict or list of dicts")
