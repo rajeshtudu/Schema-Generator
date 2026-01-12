@@ -832,14 +832,22 @@ st.download_button(
 
 st.markdown("## Output")
 
+# Homepage returns LIST[dict], others return dict
 if isinstance(schema, list):
+
     if output_mode == "JSON-LD":
         st.code(json.dumps(schema, indent=2), language="json")
-    else:
-        html = "\n\n".join(to_script_tag(block) for block in schema)
+
+    else:  # Script Tag mode
+        html = "\n\n".join(
+            to_script_tag(block) for block in schema
+        )
         st.code(html, language="html")
+
 else:
+
     if output_mode == "JSON-LD":
         st.code(json.dumps(schema, indent=2), language="json")
+
     else:
         st.code(to_script_tag(schema), language="html")
