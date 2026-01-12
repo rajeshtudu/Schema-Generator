@@ -373,6 +373,7 @@ def homepage_schema(data):
     """
     Universal Homepage schema generator.
     Uses business_type as the single source of truth.
+    Returns {} if required values are missing instead of raising.
     """
 
     business_type = data.get("business_type", "Organization")
@@ -402,11 +403,12 @@ def homepage_schema(data):
         else "Organization"
     )
 
-    site_url = data.get("site_url")
-    name = data.get("name")
+    site_url = (data.get("site_url") or "").strip()
+    name = (data.get("name") or "").strip()
 
+    # 🔑 IMPORTANT: don't crash if user hasn't filled required fields yet
     if not site_url or not name:
-        raise ValueError("homepage_schema: site_url and name are required.")
+        return {}
 
     entity = {
         "@context": "https://schema.org",
@@ -528,9 +530,9 @@ def homepage_schema(data):
                 catalog["itemListElement"].append(
                     {
                         "@type": "Service",
-                            "name": s["name"],
-                            "description": s["description"],
-                            "url": s["url"],
+                        "name": s["name"],
+                        "description": s["description"],
+                        "url": s["url"],
                     }
                 )
 

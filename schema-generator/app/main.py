@@ -308,7 +308,6 @@ if page_type == "Homepage":
             meop_id = st.text_input("WebPage @id", value=site_url)
             add_types = clean_list(st.text_area("WebPage additionalType (one per line)"))
 
-            # nested about input WITH NAMES + hasPart
             st.markdown("#### WebPage about (nested)")
             st.caption(
                 "Format:\n"
@@ -320,7 +319,6 @@ if page_type == "Homepage":
                 "  - Sofa | https://en.wikipedia.org/wiki/Couch, https://www.wikidata.org/wiki/Q215380"
             )
             about_nested_lines = clean_list(st.text_area("About (parent + hasPart)"))
-
             mentions_urls = clean_list(st.text_area("WebPage mentions URLs (one per line)"))
 
             main_entity_of_page = {
@@ -351,7 +349,6 @@ if page_type == "Homepage":
         "alternate_names": alternate_names,
         "knows_language": knows_language,
 
-        # business-level optional fields
         "additional_types": additional_types,
         "knows_about": knows_about,
 
@@ -383,7 +380,11 @@ if page_type == "Homepage":
         "faqs": faqs,
     }
 
-    schema = homepage_schema(data)
+    # ✅ Only generate schema when both required fields are present
+    if site_url.strip() and name.strip():
+        schema = homepage_schema(data)
+    else:
+        schema = {}
 
 # -----------------------------------
 # LOCAL BUSINESS
@@ -836,20 +837,27 @@ if gtag_enabled:
 # -----------------------------------
 st.markdown("## Output")
 
-if output_mode == "JSON-LD":
-    st.code(json.dumps(schema, indent=2), language="json")
-else:  # Script Tag
-    html_blocks = []
+# If nothing generated yet and no GA, show info instead of crashing
+if not schema and not (gtag_enabled and gtag_id):
+    st.info("Fill in the required fields above to generate schema.")
+else:
+    if output_mode == "JSON-LD":
+        if schema:
+            st.code(json.dumps(schema, indent=2), language="json")
+        else:
+            # Only Google tag, no schema
+            st.code("// No JSON-LD schema generated (only Google tag selected).", language="javascript")
+    else:  # Script Tag
+        html_blocks = []
 
-    # Schema scripts
-    if isinstance(schema, list):
-        html_blocks.extend(to_script_tag(block) for block in schema)
-    else:
-        html_blocks.append(to_script_tag(schema))
+        if schema:
+            if isinstance(schema, list):
+                html_blocks.extend(to_script_tag(block) for block in schema)
+            else:
+                html_blocks.append(to_script_tag(schema))
 
-    # Optional Google Analytics
-    if gtag_enabled and gtag_id:
-        html_blocks.append(google_gtag_script(gtag_id))
+        if gtag_enabled and gtag_id:
+            html_blocks.append(google_gtag_script(gtag_id))
 
-    html = "\n\n".join(html_blocks)
-    st.code(html, language="html")
+        html = "\n\n".join(html_blocks)
+        st.code(html, language="html")
