@@ -369,137 +369,223 @@ def _build_faq_schema(faqs):
 # -------------------------
 # UNIVERSAL HOMEPAGE SCHEMA
 # -------------------------
-def homepage_schema(data: dict):
+def homepage_schema(data):
     """
-    UNIVERSAL Homepage JSON-LD generator.
-
-    Requires:
-      - data["homepage_entity_type"]: "Organization" or "LocalBusiness"
-
-    Optional:
-      - data["business_type"]: LocalBusiness subtype (BeautySalon, Store, etc.)
+    Universal Homepage schema generator.
+    Uses business_type as the single source of truth.
     """
 
-    homepage_entity_type = (data.get("homepage_entity_type") or "").strip()
+    business_type = data.get("business_type", "Organization")
 
-    if homepage_entity_type not in ("Organization", "LocalBusiness"):
-        raise ValueError(
-            "homepage_schema: 'homepage_entity_type' must be 'Organization' or 'LocalBusiness'."
-        )
-
-    # Resolve final @type
-    if homepage_entity_type == "Organization":
-        business_type = "Organization"
-    else:
-        business_type = (data.get("business_type") or "LocalBusiness").strip()
-
-    base_url = (data.get("site_url") or "").rstrip("/")
-
-    if homepage_entity_type == "Organization":
-        id_fragment = data.get("id_fragment") or "organization"
-    else:
-        id_fragment = data.get("id_fragment") or _slugify_type(business_type)
-
-    entity_id = f"{base_url}/#{id_fragment}" if base_url else None
-
-    # -------------------------
-    # Common builds
-    # -------------------------
-    has_map = _build_has_map(data.get("has_map"))
-    aggregate_rating = _build_aggregate_rating(data.get("aggregate_rating") or {})
-    founders = _build_founders(data.get("founders") or [], entity_id)
-    identifier = _build_identifier(data)
-
-    main_entity_of_page_webpage = _build_main_entity_of_page_webpage(
-        data.get("main_entity_of_page") or {},
-        fallback_url=data.get("site_url")
-    )
-
-    main_entity_of_page_url = (data.get("main_entity_of_page_url") or "").strip()
-    main_entity_of_page = main_entity_of_page_url or main_entity_of_page_webpage
-
-    makes_offer = _build_makes_offer(data.get("makes_offer"))
-    has_offer_catalog = _build_has_offer_catalog(data)
-
-    area_served = data.get("area_served", [])
-
-    # -------------------------
-    # Base entity
-    # -------------------------
-    business_schema = {
-        "@context": "https://schema.org",
-        "@type": business_type,
-        "@id": entity_id,
-
-        "name": data.get("org_name") or data.get("name"),
-        "legalName": data.get("legal_name"),
-        "description": data.get("description"),
-        "image": data.get("image"),
-        "logo": data.get("logo"),
-        "url": data.get("site_url"),
-
-        "sameAs": data.get("same_as", []),
-        "alternateName": data.get("alternate_names", []),
-
-        "mainEntityOfPage": main_entity_of_page,
-
-        "knowsLanguage": data.get("knows_language"),
-        "additionalType": data.get("additional_types", []),
-        "knowsAbout": data.get("knows_about", []),
-
-        "founder": founders,
-        "identifier": identifier,
-
-        "makesOffer": makes_offer,
-        "hasOfferCatalog": has_offer_catalog,
+    LOCAL_BUSINESS_TYPES = {
+        "LocalBusiness",
+        "ProfessionalService",
+        "Store",
+        "BeautySalon",
+        "HairSalon",
+        "NailSalon",
+        "DaySpa",
+        "HealthAndBeautyBusiness",
+        "Dentist",
+        "MedicalBusiness",
+        "Restaurant",
+        "Hotel",
+        "RealEstateAgent",
+        "HVACBusiness",
+        "Plumber",
+        "Physiotherapy",
     }
 
-    # -------------------------
-    # LocalBusiness-only fields
-    # -------------------------
-    if homepage_entity_type == "LocalBusiness":
-        business_schema.update({
-            "priceRange": data.get("price_range"),
-            "telephone": data.get("telephone"),
-            "email": data.get("email"),
+    homepage_entity_type = (
+        "LocalBusiness"
+        if business_type in LOCAL_BUSINESS_TYPES
+        else "Organization"
+    )
 
-            "address": {
-                "@type": "PostalAddress",
-                "streetAddress": data.get("street"),
-                "addressLocality": data.get("city"),
-                "addressRegion": data.get("state"),
-                "postalCode": data.get("zip"),
-                "addressCountry": data.get("country"),
-            },
-            "geo": {
+    site_url = data.get("site_url")
+    name = data.get("name")
+
+    if not site_url or not name:
+        raise ValueError("homepage_schema: site_url and name are required.")
+
+    entity = {
+        "@context": "https://schema.org",
+        "@type": business_type,
+        "@id": site_url.rstrip("/") + "#entity",
+        "url": site_url,
+        "name": name,
+    }
+
+    # Basic optional properties
+    org_name = data.get("org_name")
+    if org_name:
+        entity["legalName"] = org_name
+
+    for field, key in [
+        ("description", "description"),
+        ("logo", "logo"),
+        ("image", "image"),
+        ("telephone", "telephone"),
+        ("email", "email"),
+        ("price_range", "priceRange"),
+    ]:
+        value = data.get(field)
+        if value:
+            entity[key] = value
+
+    # sameAs / alternateName / language
+    if data.get("same_as"):
+        entity["sameAs"] = data["same_as"]
+
+    if data.get("alternate_names"):
+        entity["alternateName"] = data["alternate_names"]
+
+    if data.get("knows_language"):
+        entity["knowsLanguage"] = data["knows_language"]
+
+    if data.get("additional_types"):
+        entity["additionalType"] = data["additional_types"]
+
+    if data.get("knows_about"):
+        entity["knowsAbout"] = data["knows_about"]
+
+    # Address + Geo (for LocalBusiness)
+    if homepage_entity_type == "LocalBusiness" and data.get("street"):
+        address = {
+            "@type": "PostalAddress",
+            "streetAddress": data.get("street"),
+            "addressLocality": data.get("city"),
+            "addressRegion": data.get("state"),
+            "postalCode": data.get("zip"),
+            "addressCountry": data.get("country"),
+        }
+        entity["address"] = {k: v for k, v in address.items() if v}
+
+        if data.get("lat") and data.get("lng"):
+            entity["geo"] = {
                 "@type": "GeoCoordinates",
                 "latitude": data.get("lat"),
                 "longitude": data.get("lng"),
-            },
-            "hasMap": has_map,
-            "openingHoursSpecification": data.get("opening_hours_spec", []),
-            "areaServed": area_served,
-            "aggregateRating": aggregate_rating,
-        })
+            }
 
-    blocks = [_clean_schema(business_schema)]
+    # Opening hours
+    if data.get("opening_hours_spec"):
+        entity["openingHoursSpecification"] = data["opening_hours_spec"]
 
-    # Optional WebSite block
-    website_block = _build_website_schema(
-        website_in=data.get("website_schema") or {},
-        base_url=base_url,
-        fallback_name=data.get("site_name") or data.get("name"),
-        fallback_url=data.get("site_url"),
-    )
-    if website_block:
-        blocks.append(_clean_schema(website_block))
+    # Area served
+    if data.get("area_served"):
+        entity["areaServed"] = data["area_served"]
 
-    # Optional FAQPage block
-    faq_block = _build_faq_schema(data.get("faqs", []))
-    if faq_block:
-        blocks.append(_clean_schema(faq_block))
+    # Identifier
+    if data.get("identifier_property_id") and data.get("identifier_value"):
+        entity["identifier"] = {
+            "@type": "PropertyValue",
+            "propertyID": data["identifier_property_id"],
+            "value": data["identifier_value"],
+        }
+    elif data.get("identifier_values"):
+        entity["identifier"] = data["identifier_values"]
 
-    return blocks
+    # hasMap
+    if data.get("has_map"):
+        entity["hasMap"] = data["has_map"]
+
+    # makesOffer
+    if data.get("makes_offer"):
+        entity["makesOffer"] = [
+            {
+                "@type": "Offer",
+                "name": o["name"],
+                "description": o["description"],
+                "url": o["url"],
+            }
+            for o in data["makes_offer"]
+        ]
+
+    # hasOfferCatalog
+    if data.get("offer_catalog_services"):
+        catalog = {
+            "@type": "OfferCatalog",
+            "name": data.get("offer_catalog_name") or "Services",
+            "itemListElement": [],
+        }
+
+        if data.get("offer_catalog_mode") == "offer_wrapped":
+            for s in data["offer_catalog_services"]:
+                catalog["itemListElement"].append(
+                    {
+                        "@type": "Offer",
+                        "itemOffered": {
+                            "@type": "Service",
+                            "name": s["name"],
+                            "description": s["description"],
+                            "url": s["url"],
+                        },
+                    }
+                )
+        else:
+            for s in data["offer_catalog_services"]:
+                catalog["itemListElement"].append(
+                    {
+                        "@type": "Service",
+                            "name": s["name"],
+                            "description": s["description"],
+                            "url": s["url"],
+                    }
+                )
+
+        entity["hasOfferCatalog"] = catalog
+
+    # mainEntityOfPage
+    if data.get("main_entity_of_page"):
+        entity["mainEntityOfPage"] = {
+            "@type": "WebPage",
+            **data["main_entity_of_page"],
+        }
+    elif data.get("main_entity_of_page_url"):
+        entity["mainEntityOfPage"] = data["main_entity_of_page_url"]
+
+    blocks = [entity]
+
+    # WebSite block
+    website_schema = data.get("website_schema")
+    if website_schema and website_schema.get("url"):
+        website = {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "@id": website_schema["url"].rstrip("/") + "#website",
+            "url": website_schema["url"],
+            "name": website_schema.get("name"),
+        }
+
+        if website_schema.get("sameAs"):
+            website["sameAs"] = website_schema["sameAs"]
+
+        if website_schema.get("potentialAction"):
+            website["potentialAction"] = website_schema["potentialAction"]
+
+        blocks.append(website)
+
+    # FAQPage
+    if data.get("faqs"):
+        faq_block = {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": f["question"],
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": f["answer"],
+                    },
+                }
+                for f in data["faqs"]
+            ],
+        }
+        blocks.append(faq_block)
+
+    return blocks if len(blocks) > 1 else entity
 
 
 # -------------------------

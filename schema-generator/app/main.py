@@ -16,7 +16,7 @@ st.set_page_config(page_title="Schema Generator", layout="wide")
 st.sidebar.title("Schema Generator")
 
 
-# ✅ NEW: parse nested about input (Parent | url1, url2 then "- Child | url1, url2")
+# ✅ parse nested about input (Parent | url1, url2 then "- Child | url1, url2")
 def parse_about_nested(lines):
     """
     Input format:
@@ -68,6 +68,20 @@ def parse_about_nested(lines):
             p.pop("has_part", None)
 
     return result
+
+
+def google_gtag_script(gtag_id: str) -> str:
+    """Return a Google Analytics gtag.js snippet for the given Measurement ID."""
+    if not gtag_id:
+        return ""
+    return f"""<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id={gtag_id}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){{dataLayer.push(arguments);}}
+  gtag('js', new Date());
+  gtag('config', '{gtag_id}');
+</script>"""
 
 
 page_type = st.sidebar.selectbox(
@@ -147,7 +161,7 @@ if page_type == "Homepage":
         language_enabled = st.checkbox("Add knowsLanguage (optional)")
         knows_language = st.text_input("knowsLanguage (e.g. en-US)", value="en-US") if language_enabled else ""
 
-        # ✅ Optional: additionalType + knowsAbout at BUSINESS level
+        # Optional: additionalType + knowsAbout at BUSINESS level
         additional_type_enabled = st.checkbox("Add additionalType (optional)")
         additional_types = clean_list(st.text_area("additionalType URLs (one per line)")) if additional_type_enabled else []
 
@@ -277,9 +291,11 @@ if page_type == "Homepage":
             website_schema = {
                 "name": site_name,
                 "url": site_url,
-                "sameAs": same_as if same_as_enabled else [],
-                "potentialAction": potential_action
             }
+            if same_as_enabled and same_as:
+                website_schema["sameAs"] = same_as
+            if potential_action:
+                website_schema["potentialAction"] = potential_action
 
         st.markdown("### mainEntityOfPage (optional)")
         meop_mode = st.radio("mainEntityOfPage mode", ["None", "WebPage object", "String URL"], horizontal=True)
@@ -292,7 +308,7 @@ if page_type == "Homepage":
             meop_id = st.text_input("WebPage @id", value=site_url)
             add_types = clean_list(st.text_area("WebPage additionalType (one per line)"))
 
-            # ✅ UPDATED: nested about input WITH NAMES + hasPart
+            # nested about input WITH NAMES + hasPart
             st.markdown("#### WebPage about (nested)")
             st.caption(
                 "Format:\n"
@@ -335,7 +351,7 @@ if page_type == "Homepage":
         "alternate_names": alternate_names,
         "knows_language": knows_language,
 
-        # ✅ business-level optional fields
+        # business-level optional fields
         "additional_types": additional_types,
         "knows_about": knows_about,
 
@@ -807,21 +823,33 @@ elif page_type == "Product Page":
     schema = product_schema(data)
 
 # -----------------------------------
+# Optional Scripts (Google Analytics)
+# -----------------------------------
+st.markdown("## Optional Scripts")
+gtag_enabled = st.checkbox("Add Google Analytics (gtag.js)", value=False)
+gtag_id = ""
+if gtag_enabled:
+    gtag_id = st.text_input("Google Analytics Measurement ID", placeholder="G-XXXXXXXXXX")
+
+# -----------------------------------
 # Output
 # -----------------------------------
 st.markdown("## Output")
 
 if output_mode == "JSON-LD":
     st.code(json.dumps(schema, indent=2), language="json")
-
 else:  # Script Tag
-    html = ""
+    html_blocks = []
 
+    # Schema scripts
     if isinstance(schema, list):
-        html = "\n\n".join(
-            to_script_tag(block) for block in schema
-        )
+        html_blocks.extend(to_script_tag(block) for block in schema)
     else:
-        html = to_script_tag(schema)
+        html_blocks.append(to_script_tag(schema))
 
+    # Optional Google Analytics
+    if gtag_enabled and gtag_id:
+        html_blocks.append(google_gtag_script(gtag_id))
+
+    html = "\n\n".join(html_blocks)
     st.code(html, language="html")
