@@ -821,11 +821,10 @@ st.markdown("## Output")
 if output_mode == "JSON-LD":
     st.code(json.dumps(schema, indent=2), language="json")
 else:
-    st.code(to_script_tag(schema), language="html")
-
-st.download_button(
-    "Download JSON-LD",
-    data=json.dumps(schema, indent=2),
-    file_name="schema.json",
-    mime="application/json"
-)
+    if isinstance(schema, list):
+        st.code(
+            "\n\n".join(to_script_tag(block) for block in schema),
+            language="html"
+        )
+    else:
+        st.code(to_script_tag(schema), language="html")
