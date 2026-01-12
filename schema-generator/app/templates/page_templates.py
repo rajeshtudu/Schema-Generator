@@ -1,5 +1,3 @@
-from utils.schema_helpers import to_script_tag
-
 import re
 
 
@@ -868,21 +866,3 @@ def product_schema(data: dict):
         }
 
     return _clean_schema(schema)
-
-def render_schema_blocks(schema) -> str:
-    """
-    Accepts:
-      - dict (single schema)
-      - list[dict] (multiple schemas)
-    Returns JSON-LD <script> tags.
-    """
-    if not schema:
-        return ""
-
-    if isinstance(schema, dict):
-        return to_script_tag(schema)
-
-    if isinstance(schema, list):
-        return "\n\n".join(to_script_tag(block) for block in schema)
-
-    raise TypeError("render_schema_blocks expects dict or list of dicts")
