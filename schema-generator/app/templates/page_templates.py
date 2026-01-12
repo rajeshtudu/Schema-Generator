@@ -602,115 +602,129 @@ def collection_schema(data: dict):
 # Local Business Schema (kept; note it still defaults to LocalBusiness)
 # -------------------------
 def local_business_schema(data: dict):
-    schema = {
-        "@context": "https://schema.org",
-        "@type": data.get("business_type", "LocalBusiness"),
+    """
+    Local Business page schema (single-location page).
+    Reuses universal homepage_schema() internally, but returns ONLY the business entity (dict),
+    not the extra WebSite/FAQ blocks.
+    Keeps your existing Streamlit Local Business form keys/toggles unchanged.
+    """
+
+    # Keep old behavior: default to LocalBusiness if not provided
+    business_type = (data.get("business_type") or "LocalBusiness").strip()
+
+    # Local business form uses `url` key; universal homepage uses `site_url`
+    site_url = (data.get("url") or "").strip()
+    if not site_url:
+        raise ValueError("local_business_schema: 'url' is required.")
+
+    # Map LocalBusiness inputs -> universal homepage_schema inputs
+    adapted = {
+        # REQUIRED by homepage_schema
+        "business_type": business_type,
+        "site_url": site_url,
         "name": data.get("name"),
-        "legalName": data.get("legal_name"),
+
+        # optional common fields
+        "legal_name": data.get("legal_name"),
         "description": data.get("description"),
-        "url": data.get("url"),
         "telephone": data.get("telephone"),
         "email": data.get("email"),
         "image": data.get("image"),
         "logo": data.get("logo"),
-        "priceRange": data.get("price_range"),
-        "address": {
-            "@type": "PostalAddress",
-            "streetAddress": data.get("street"),
-            "addressLocality": data.get("city"),
-            "addressRegion": data.get("state"),
-            "postalCode": data.get("zip"),
-            "addressCountry": data.get("country")
-        }
+        "price_range": data.get("price_range"),
+
+        "street": data.get("street"),
+        "city": data.get("city"),
+        "state": data.get("state"),
+        "zip": data.get("zip"),
+        "country": data.get("country"),
+        "lat": data.get("lat"),
+        "lng": data.get("lng"),
     }
 
-    lat = data.get("lat")
-    lng = data.get("lng")
-    if lat and lng:
-        schema["geo"] = {
-            "@type": "GeoCoordinates",
-            "latitude": lat,
-            "longitude": lng
-        }
-
+    # Optional: geo (homepage_schema includes geo object always but empty values are cleaned)
+    # Optional: rating -> homepage_schema expects aggregate_rating shape
     if data.get("rating_enabled"):
-        schema["aggregateRating"] = {
-            "@type": "AggregateRating",
-            "ratingValue": data.get("rating_value"),
-            "reviewCount": data.get("review_count")
+        adapted["aggregate_rating"] = {
+            "rating_value": data.get("rating_value"),
+            "review_count": data.get("review_count"),
         }
 
+    # Optional: hasMap
     if data.get("map_enabled"):
-        schema["hasMap"] = data.get("map_url")
+        adapted["has_map"] = data.get("map_url")  # can be string
 
+    # Optional: sameAs
     if data.get("sameas_enabled"):
-        schema["sameAs"] = data.get("same_as", [])
+        adapted["same_as"] = data.get("same_as", [])
 
+    # Optional: additionalType (your old local schema had it)
     if data.get("additional_type_enabled"):
-        schema["additionalType"] = data.get("additional_types", [])
+        adapted["additional_types"] = data.get("additional_types", [])
+        # If you *want* additionalType on the business entity, you can support it in homepage_schema later.
+        # For now we leave it out because homepage_schema doesn't include it.
 
+    # Optional: alternateName
     if data.get("alternate_name_enabled"):
-        schema["alternateName"] = data.get("alternate_names", [])
+        adapted["alternate_names"] = data.get("alternate_names", [])
 
+    # Optional: knowsAbout (your old local schema had it)
     if data.get("knows_about_enabled"):
-        schema["knowsAbout"] = data.get("knows_about", [])
+        adapted["knows_about"] = data.get("knows_about", [])
+        # Same note as additionalType: homepage_schema doesn't output knowsAbout currently.
 
+    # Optional: areaServed (build same object as before)
     if data.get("area_served_enabled"):
-        schema["areaServed"] = {
+        adapted["area_served"] = {
             "@type": "AdministrativeArea",
             "name": data.get("area_name"),
             "geo": {"@type": "GeoShape", "postalCode": data.get("postal_codes", [])},
-            "containsPlace": [{"@type": "City", "name": c} for c in data.get("served_cities", [])]
+            "containsPlace": [{"@type": "City", "name": c} for c in data.get("served_cities", [])],
         }
 
+    # Optional: openingHoursSpecification (convert your simple list into schema-ready list)
     if data.get("hours_enabled"):
-        schema["openingHoursSpecification"] = [
+        adapted["opening_hours_spec"] = [
             {
                 "@type": "OpeningHoursSpecification",
                 "dayOfWeek": h.get("dayOfWeek"),
                 "opens": h.get("opens"),
-                "closes": h.get("closes")
+                "closes": h.get("closes"),
             }
             for h in data.get("opening_hours", [])
         ]
 
+    # Optional: identifier (propertyID + value)
     if data.get("identifier_enabled"):
-        schema["identifier"] = {
-            "@type": "PropertyValue",
-            "propertyID": data.get("identifier_property_id"),
-            "value": data.get("identifier_value")
-        }
+        adapted["identifier_property_id"] = data.get("identifier_property_id")
+        adapted["identifier_value"] = data.get("identifier_value")
 
+    # Optional: founder (your old local schema used single founder object)
+    # Universal homepage_schema supports founders list, so we convert it
     if data.get("founder_enabled"):
-        schema["founder"] = {
-            "@type": "Person",
+        adapted["founders"] = [{
             "name": data.get("founder_name"),
-            "jobTitle": data.get("founder_job_title"),
-            "sameAs": data.get("founder_same_as", [])
-        }
+            "job_title": data.get("founder_job_title"),
+            "same_as": data.get("founder_same_as", []),
+        }]
 
+    # Optional: language
     if data.get("language_enabled"):
-        schema["knowsLanguage"] = data.get("knows_language")
+        adapted["knows_language"] = data.get("knows_language")
 
+    # Optional: hasOfferCatalog (use your old wrapped-offer style)
     if data.get("catalog_enabled"):
-        schema["hasOfferCatalog"] = {
-            "@type": "OfferCatalog",
-            "name": data.get("catalog_name"),
-            "itemListElement": [
-                {
-                    "@type": "Offer",
-                    "itemOffered": {
-                        "@type": "Service",
-                        "name": s.get("name"),
-                        "description": s.get("description"),
-                        "url": s.get("url")
-                    }
-                }
-                for s in data.get("services", [])
-            ]
-        }
+        adapted["offer_catalog_mode"] = "offer_wrapped"
+        adapted["offer_catalog_name"] = data.get("catalog_name")
+        adapted["offer_catalog_services"] = data.get("services", [])
 
-    return _clean_schema(schema)
+    # IMPORTANT: Local Business page should NOT emit extra homepage blocks
+    adapted["website_schema"] = {}
+    adapted["faqs"] = []
+
+    blocks = homepage_schema(adapted)  # returns list of blocks
+    return blocks[0]                  # return only the business entity dict
+
 
 
 # -------------------------
