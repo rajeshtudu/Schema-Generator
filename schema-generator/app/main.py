@@ -4,7 +4,7 @@ import json
 from templates.page_templates import (
     local_business_schema,
     product_schema,
-    homepage_schema,
+    homepage_schema,          # ✅ now your UNIVERSAL homepage_schema (business_type required)
     service_page_schema,
     collection_schema,
     entity_recommendations
@@ -45,55 +45,270 @@ if recs:
 schema = {}
 
 # -----------------------------------
-# HOMEPAGE
+# HOMEPAGE (UNIVERSAL)
 # -----------------------------------
 if page_type == "Homepage":
-    st.subheader("Homepage Schema (WebSite + Organization)")
+    st.subheader("Homepage Schema (Universal: works for ANY business type)")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        site_name = st.text_input("Website Name")
-        site_url = st.text_input("Website URL")
-        org_type = st.selectbox("Entity Type for Brand", ["Organization", "LocalBusiness"])
-        org_name = st.text_input("Organization / Business Name")
-        logo = st.text_input("Logo URL")
-        image = st.text_input("Image URL")
-        telephone = st.text_input("Telephone")
+        site_url = st.text_input("Website URL (required)")
+        name = st.text_input("Business / Brand Name (required)")
+        org_name = st.text_input("Legal / Organization Name (optional)", value="")
+        description = st.text_area("Description (optional)")
+        logo = st.text_input("Logo URL (optional)")
+        image = st.text_input("Image URL (optional)")
+        telephone = st.text_input("Telephone (optional)")
+        email = st.text_input("Email (optional)")
+        price_range = st.text_input("Price Range (optional)", value="")
 
-    with col2:
-        description = st.text_area("Site Description")
-        search_enabled = st.checkbox("Add SearchAction (recommended)", value=True)
-        search_url = ""
-        if search_enabled:
-            search_url = st.text_input(
-                "Search URL Template",
-                value=f"{site_url.rstrip('/')}/search?q={{search_term_string}}"
-            )
+        # ✅ business_type is REQUIRED by your new template
+        common_types = [
+            "LocalBusiness",
+            "Organization",
+            "ProfessionalService",
+            "Store",
+            "BeautySalon",
+            "HairSalon",
+            "NailSalon",
+            "DaySpa",
+            "HealthAndBeautyBusiness",
+            "Dentist",
+            "MedicalBusiness",
+            "Restaurant",
+            "Hotel",
+            "RealEstateAgent",
+        ]
+        bt_pick = st.selectbox("Schema.org @type (required)", common_types, index=0)
+        bt_custom_enabled = st.checkbox("Use a custom @type", value=False)
+        business_type = st.text_input("Custom @type", value=bt_pick) if bt_custom_enabled else bt_pick
 
-        same_as_enabled = st.checkbox("Add sameAs (recommended)")
+        # sameAs
+        same_as_enabled = st.checkbox("Add sameAs (recommended)", value=True)
         same_as = clean_list(st.text_area("sameAs Links (one per line)")) if same_as_enabled else []
 
-        additional_type_enabled = st.checkbox("Add additionalType (optional)")
-        additional_types = clean_list(st.text_area("additionalType URLs (one per line)")) if additional_type_enabled else []
+        # alternateName
+        alternate_name_enabled = st.checkbox("Add alternateName (optional)")
+        alternate_names = clean_list(st.text_area("alternateName (one per line)")) if alternate_name_enabled else []
 
-        about_enabled = st.checkbox("Add about entities (optional)")
-        about_entities = clean_list(st.text_area("about URLs (Wikipedia/Wikidata)")) if about_enabled else []
+        # language
+        language_enabled = st.checkbox("Add knowsLanguage (optional)")
+        knows_language = st.text_input("knowsLanguage (e.g. en-US)", value="en-US") if language_enabled else ""
 
+    with col2:
+        st.markdown("### Location (optional)")
+        location_enabled = st.checkbox("Add Address + Geo (recommended for local businesses)", value=False)
+
+        street = city = state = zip_code = country = lat = lng = ""
+        if location_enabled:
+            street = st.text_input("Street Address")
+            city = st.text_input("City")
+            state = st.text_input("State / Region")
+            zip_code = st.text_input("Zip / Postal Code")
+            country = st.text_input("Country", value="US")
+            lat = st.text_input("Latitude")
+            lng = st.text_input("Longitude")
+
+        # Map
+        map_enabled = st.checkbox("Add hasMap (optional)")
+        has_map = None
+        if map_enabled:
+            map_url = st.text_input("Map URL (Google Maps link)")
+            # Your universal template accepts dict or str; keep it simple:
+            has_map = map_url
+
+        # Opening hours (already-shaped list of OpeningHoursSpecification)
+        hours_enabled = st.checkbox("Add openingHoursSpecification (optional)")
+        opening_hours_spec = []
+        if hours_enabled:
+            st.caption("Add rows like: dayOfWeek | opens | closes (one per line)")
+            lines = clean_list(st.text_area("Opening Hours"))
+            for line in lines:
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) == 3:
+                    day, opens, closes = parts
+                    opening_hours_spec.append({
+                        "@type": "OpeningHoursSpecification",
+                        "dayOfWeek": day,
+                        "opens": opens,
+                        "closes": closes
+                    })
+
+        # Area served (pass-through: easiest universal)
+        area_served_enabled = st.checkbox("Add areaServed (optional)")
+        area_served = []
+        if area_served_enabled:
+            st.caption("Tip: paste JSON list/dict for areaServed (schema-ready).")
+            area_served_raw = st.text_area("areaServed JSON (list or dict)")
+            try:
+                if area_served_raw.strip():
+                    area_served = json.loads(area_served_raw)
+            except Exception:
+                st.warning("areaServed JSON is invalid. Leave empty or fix JSON.")
+
+        # Identifier (either propertyID+value OR list of values)
+        identifier_enabled = st.checkbox("Add identifier (optional)")
+        identifier_property_id = identifier_value = ""
+        identifier_values = []
+        if identifier_enabled:
+            mode = st.radio("Identifier mode", ["propertyID + value", "value list"], horizontal=True)
+            if mode == "propertyID + value":
+                identifier_property_id = st.text_input("identifier propertyID (e.g. kgmid, mapsCid)")
+                identifier_value = st.text_input("identifier value (URL or ID)")
+            else:
+                identifier_values = clean_list(st.text_area("identifier values (one per line)"))
+
+        # Offer modules (universal: allow both)
+        st.markdown("### Offers / Services (optional)")
+
+        makes_offer_enabled = st.checkbox("Add makesOffer (retail categories / offers)", value=False)
+        makes_offer = []
+        if makes_offer_enabled:
+            st.caption("Add offers like: name | description | url (one per line)")
+            offer_lines = clean_list(st.text_area("makesOffer"))
+            for line in offer_lines:
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) == 3:
+                    makes_offer.append({"name": parts[0], "description": parts[1], "url": parts[2]})
+
+        catalog_enabled = st.checkbox("Add hasOfferCatalog (services catalog)", value=False)
+        offer_catalog_services = []
+        offer_catalog_mode = "service_list"
+        offer_catalog_name = ""
+        if catalog_enabled:
+            offer_catalog_name = st.text_input("OfferCatalog Name (optional)", value="Services")
+            offer_catalog_mode = st.selectbox(
+                "OfferCatalog shape",
+                ["service_list", "offer_wrapped"],
+                help="service_list = itemListElement is [Service] (Cloudavize-style). "
+                     "offer_wrapped = itemListElement is [Offer -> itemOffered -> Service]."
+            )
+            st.caption("Add services like: name | description | url (one per line)")
+            svc_lines = clean_list(st.text_area("Services"))
+            for line in svc_lines:
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) == 3:
+                    offer_catalog_services.append({
+                        "name": parts[0],
+                        "description": parts[1],
+                        "url": parts[2]
+                    })
+
+        # FAQ (universal)
+        faq_enabled = st.checkbox("Add FAQPage (recommended if you have FAQs)", value=False)
+        faqs = []
+        if faq_enabled:
+            st.caption("Add FAQ like: Question | Answer (one per line)")
+            faq_lines = clean_list(st.text_area("FAQs"))
+            for line in faq_lines:
+                if "|" in line:
+                    q, a = line.split("|", 1)
+                    faqs.append({"question": q.strip(), "answer": a.strip()})
+
+        # Optional WebSite block
+        website_block_enabled = st.checkbox("Add a separate WebSite block (recommended)", value=True)
+        website_schema = {}
+        if website_block_enabled:
+            site_name = st.text_input("WebSite Name (optional)", value=name)
+            search_enabled = st.checkbox("Add SearchAction to WebSite (recommended)", value=True)
+            potential_action = None
+            if search_enabled and site_url.strip():
+                search_target = st.text_input(
+                    "Search URL template (use {search_term_string})",
+                    value=f"{site_url.rstrip('/')}/search?q={{search_term_string}}"
+                )
+                potential_action = {
+                    "@type": "SearchAction",
+                    "target": search_target,
+                    "query-input": "required name=search_term_string"
+                }
+
+            website_schema = {
+                "name": site_name,
+                "url": site_url,
+                "sameAs": same_as if same_as_enabled else [],
+                "potentialAction": potential_action
+            }
+
+        # Optional mainEntityOfPage (either WebPage object OR string URL)
+        st.markdown("### mainEntityOfPage (optional)")
+        meop_mode = st.radio("mainEntityOfPage mode", ["None", "WebPage object", "String URL"], horizontal=True)
+
+        main_entity_of_page = {}
+        main_entity_of_page_url = ""
+        if meop_mode == "WebPage object":
+            meop_name = st.text_input("WebPage name", value="Home")
+            meop_url = st.text_input("WebPage url", value=site_url)
+            meop_id = st.text_input("WebPage @id", value=site_url)
+            add_types = clean_list(st.text_area("WebPage additionalType (one per line)"))
+            # Keep about/mentions simple: URLs only -> Thing w/ sameAs = url, name = url (minimal)
+            about_urls = clean_list(st.text_area("WebPage about URLs (one per line)"))
+            mentions_urls = clean_list(st.text_area("WebPage mentions URLs (one per line)"))
+
+            main_entity_of_page = {
+                "name": meop_name,
+                "url": meop_url,
+                "@id": meop_id,
+                "additionalType": add_types,
+                "about": [{"@type": "Thing", "name": u, "sameAs": u} for u in about_urls],
+                "mentions": [{"@type": "Thing", "name": u, "sameAs": u} for u in mentions_urls],
+            }
+        elif meop_mode == "String URL":
+            main_entity_of_page_url = st.text_input("mainEntityOfPage URL (string)", value="")
+
+    # Build data payload for UNIVERSAL homepage_schema()
     data = {
-        "site_name": site_name,
+        # REQUIRED
+        "business_type": business_type,
         "site_url": site_url,
-        "org_type": org_type,
+        "name": name,
+
+        # optional
         "org_name": org_name,
+        "description": description,
         "logo": logo,
         "image": image,
         "telephone": telephone,
-        "description": description,
-        "search_enabled": search_enabled,
-        "search_url": search_url,
+        "email": email,
+        "price_range": price_range,
+
         "same_as": same_as,
-        "additional_types": additional_types,
-        "about_entities": about_entities
+        "alternate_names": alternate_names,
+        "knows_language": knows_language,
+
+        # location (optional)
+        "street": street,
+        "city": city,
+        "state": state,
+        "zip": zip_code,
+        "country": country,
+        "lat": lat,
+        "lng": lng,
+
+        # modules
+        "has_map": has_map,
+        "opening_hours_spec": opening_hours_spec,
+        "area_served": area_served,
+
+        # identifiers
+        "identifier_property_id": identifier_property_id,
+        "identifier_value": identifier_value,
+        "identifier_values": identifier_values,
+
+        # offers/catalog
+        "makes_offer": makes_offer,
+        "offer_catalog_name": offer_catalog_name,
+        "offer_catalog_services": offer_catalog_services,
+        "offer_catalog_mode": offer_catalog_mode,
+
+        # mainEntityOfPage
+        "main_entity_of_page": main_entity_of_page,
+        "main_entity_of_page_url": main_entity_of_page_url,
+
+        # extra blocks
+        "website_schema": website_schema,
+        "faqs": faqs,
     }
 
     schema = homepage_schema(data)
