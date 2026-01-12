@@ -406,7 +406,7 @@ def homepage_schema(data):
     site_url = (data.get("site_url") or "").strip()
     name = (data.get("name") or "").strip()
 
-    # 🔑 IMPORTANT: don't crash if user hasn't filled required fields yet
+    # ❗ Don't crash when fields are empty; just return empty schema
     if not site_url or not name:
         return {}
 
@@ -435,7 +435,7 @@ def homepage_schema(data):
         if value:
             entity[key] = value
 
-    # sameAs / alternateName / language
+    # sameAs / alternateName / language / additionalType / knowsAbout
     if data.get("same_as"):
         entity["sameAs"] = data["same_as"]
 

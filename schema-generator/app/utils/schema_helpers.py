@@ -1,15 +1,26 @@
 import json
 
-def clean_list(text: str):
+
+def clean_list(text):
+    """
+    Takes a textarea string and returns a cleaned list of non-empty lines.
+    """
     if not text:
         return []
-    lines = [line.strip() for line in text.split("\n")]
-    return [line for line in lines if line]
+    lines = []
+    for line in text.splitlines():
+        l = (line or "").strip()
+        if l:
+            lines.append(l)
+    return lines
 
 
-def to_script_tag(schema: dict) -> str:
+def to_script_tag(schema_dict):
+    """
+    Wrap a JSON-serializable dict in a JSON-LD <script> tag.
+    """
     return (
         '<script type="application/ld+json">\n'
-        f'{json.dumps(schema, ensure_ascii=False, indent=2)}\n'
-        '</script>'
+        + json.dumps(schema_dict, indent=2)
+        + "\n</script>"
     )

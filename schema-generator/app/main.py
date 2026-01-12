@@ -12,11 +12,14 @@ from templates.page_templates import (
 
 from utils.schema_helpers import clean_list, to_script_tag
 
+
 st.set_page_config(page_title="Schema Generator", layout="wide")
 st.sidebar.title("Schema Generator")
 
 
-# ✅ parse nested about input (Parent | url1, url2 then "- Child | url1, url2")
+# -----------------------------------
+# Helpers
+# -----------------------------------
 def parse_about_nested(lines):
     """
     Input format:
@@ -62,7 +65,6 @@ def parse_about_nested(lines):
         else:
             current_parent["has_part"].append({"name": name, "same_as": urls_list})
 
-    # remove empty has_part
     for p in result:
         if not p.get("has_part"):
             p.pop("has_part", None)
@@ -71,7 +73,9 @@ def parse_about_nested(lines):
 
 
 def google_gtag_script(gtag_id: str) -> str:
-    """Return a Google Analytics gtag.js snippet for the given Measurement ID."""
+    """
+    Return a Google Analytics gtag.js snippet for the given Measurement ID.
+    """
     if not gtag_id:
         return ""
     return f"""<!-- Google tag (gtag.js) -->
@@ -84,6 +88,9 @@ def google_gtag_script(gtag_id: str) -> str:
 </script>"""
 
 
+# -----------------------------------
+# Sidebar Controls
+# -----------------------------------
 page_type = st.sidebar.selectbox(
     "Select Page Type",
     [
@@ -111,7 +118,8 @@ if recs:
         st.markdown("### ➕ Optional")
         st.write(", ".join(recs.get("optional", [])))
 
-schema = {}
+schema = {}  # will hold final schema object
+
 
 # -----------------------------------
 # HOMEPAGE (UNIVERSAL)
@@ -161,12 +169,15 @@ if page_type == "Homepage":
         language_enabled = st.checkbox("Add knowsLanguage (optional)")
         knows_language = st.text_input("knowsLanguage (e.g. en-US)", value="en-US") if language_enabled else ""
 
-        # Optional: additionalType + knowsAbout at BUSINESS level
         additional_type_enabled = st.checkbox("Add additionalType (optional)")
-        additional_types = clean_list(st.text_area("additionalType URLs (one per line)")) if additional_type_enabled else []
+        additional_types = clean_list(
+            st.text_area("additionalType URLs (one per line)")
+        ) if additional_type_enabled else []
 
         knows_about_enabled = st.checkbox("Add knowsAbout (optional)")
-        knows_about = clean_list(st.text_area("knowsAbout URLs (one per line)")) if knows_about_enabled else []
+        knows_about = clean_list(
+            st.text_area("knowsAbout URLs (one per line)")
+        ) if knows_about_enabled else []
 
     with col2:
         st.markdown("### Location (optional)")
@@ -380,11 +391,8 @@ if page_type == "Homepage":
         "faqs": faqs,
     }
 
-    # ✅ Only generate schema when both required fields are present
-    if site_url.strip() and name.strip():
-        schema = homepage_schema(data)
-    else:
-        schema = {}
+    # homepage_schema now returns {} if required fields missing
+    schema = homepage_schema(data)
 
 # -----------------------------------
 # LOCAL BUSINESS
@@ -823,6 +831,7 @@ elif page_type == "Product Page":
 
     schema = product_schema(data)
 
+
 # -----------------------------------
 # Optional Scripts (Google Analytics)
 # -----------------------------------
@@ -832,22 +841,28 @@ gtag_id = ""
 if gtag_enabled:
     gtag_id = st.text_input("Google Analytics Measurement ID", placeholder="G-XXXXXXXXXX")
 
+
 # -----------------------------------
-# Output
+# Output + Download
 # -----------------------------------
 st.markdown("## Output")
 
-# If nothing generated yet and no GA, show info instead of crashing
 if not schema and not (gtag_enabled and gtag_id):
-    st.info("Fill in the required fields above to generate schema.")
+    st.info("Fill in the required fields above to generate schema, or add a Google tag.")
 else:
+    # JSON-LD mode = raw JSON only
     if output_mode == "JSON-LD":
-        if schema:
-            st.code(json.dumps(schema, indent=2), language="json")
-        else:
-            # Only Google tag, no schema
-            st.code("// No JSON-LD schema generated (only Google tag selected).", language="javascript")
-    else:  # Script Tag
+        json_str = json.dumps(schema, indent=2) if schema else "{}"
+        st.code(json_str, language="json")
+        st.download_button(
+            label="Download JSON-LD",
+            data=json_str,
+            file_name="schema.json",
+            mime="application/json",
+        )
+
+    # Script Tag mode = <script type="application/ld+json"> + optional gtag
+    else:
         html_blocks = []
 
         if schema:
@@ -859,5 +874,11 @@ else:
         if gtag_enabled and gtag_id:
             html_blocks.append(google_gtag_script(gtag_id))
 
-        html = "\n\n".join(html_blocks)
-        st.code(html, language="html")
+        final_html = "\n\n".join(html_blocks)
+        st.code(final_html, language="html")
+        st.download_button(
+            label="Download HTML snippet",
+            data=final_html,
+            file_name="schema-snippet.html",
+            mime="text/html",
+        )
