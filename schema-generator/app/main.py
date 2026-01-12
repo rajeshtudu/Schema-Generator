@@ -105,12 +105,6 @@ schema = {}
 if page_type == "Homepage":
     st.subheader("Homepage Schema (Universal: works for ANY business type)")
 
-    homepage_entity_type = st.radio(
-        "Homepage Entity Type (required)",
-        ["Organization", "LocalBusiness"],
-        help="Choose LocalBusiness ONLY if customers visit a physical location."
-        )
-
     col1, col2 = st.columns(2)
 
     with col1:
