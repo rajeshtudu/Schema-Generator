@@ -57,43 +57,196 @@ def entity_recommendations(page_type: str):
 # Homepage Schema
 # -------------------------
 def homepage_schema(data: dict):
+    """
+    Homepage JSON-LD to match the provided document:
+    - 1st block: FurnitureStore (LocalBusiness subtype) with makesOffer, address, geo, etc.
+    - 2nd block: FAQPage
+    Returns: List[dict]
+    """
     base_url = (data.get("site_url") or "").rstrip("/")
-    website_id = f"{base_url}/#website" if base_url else None
-    org_id = f"{base_url}/#organization" if base_url else None
+    store_id = f"{base_url}/#furniturestore" if base_url else None
 
-    graph = [
-        {
-            "@type": "WebSite",
-            "@id": website_id,
-            "name": data.get("site_name"),
-            "url": data.get("site_url"),
-            "description": data.get("description"),
-        },
-        {
-            "@type": data.get("org_type") or "Organization",
-            "@id": org_id,
-            "name": data.get("org_name"),
-            "url": data.get("site_url"),
-            "logo": data.get("logo"),
-            "image": data.get("image"),
-            "telephone": data.get("telephone"),
-            "sameAs": data.get("same_as", []),
-            "additionalType": data.get("additional_types", []),
-            "about": [{"@type": "Thing", "sameAs": u} for u in data.get("about_entities", [])]
+    # ---- makesOffer (list of Offer) ----
+    offers_in = data.get("makes_offer", [])  # list of {name, description, url}
+    makes_offer = []
+    for o in offers_in:
+        makes_offer.append({
+            "@type": "Offer",
+            "name": o.get("name"),
+            "description": o.get("description"),
+            "url": o.get("url"),
+        })
+
+    # ---- areaServed (matches your doc shape: list -> Country -> geo GeoShape + containsPlace Cities) ----
+    area_served_in = data.get("area_served", [])  # list of country blocks
+    area_served = []
+    for a in area_served_in:
+        country = {
+            "@type": a.get("type") or "Country",
+            "name": a.get("name"),
         }
+
+        # keep the document's shape (GeoShape with "postalcode" key if you pass it that way)
+        geo = a.get("geo")
+        if isinstance(geo, dict):
+            country["geo"] = {
+                "@type": geo.get("type") or "GeoShape",
+                # your provided document uses "postalcode" (lowercase); support either input key
+                "postalcode": geo.get("postalcode") if geo.get("postalcode") is not None else geo.get("postalCode"),
+            }
+
+        contains = []
+        for c in a.get("contains_place", []):  # list of cities
+            contains.append({
+                "@type": c.get("type") or "City",
+                "name": c.get("name"),
+                "url": c.get("url"),  # can be a list (like your doc) or a string
+            })
+        if contains:
+            country["containsPlace"] = contains
+
+        area_served.append(country)
+
+    # ---- aggregateRating (with additionalProperty list) ----
+    rating_in = data.get("aggregate_rating") or {}
+    additional_props = []
+    for p in rating_in.get("additional_property", []):
+        additional_props.append({
+            "@type": "PropertyValue",
+            "name": p.get("name"),
+            "value": p.get("value"),
+        })
+
+    aggregate_rating = None
+    if rating_in:
+        aggregate_rating = {
+            "@type": "AggregateRating",
+            "name": rating_in.get("name"),
+            "ratingValue": rating_in.get("rating_value"),
+            "bestRating": rating_in.get("best_rating"),
+            "reviewCount": rating_in.get("review_count"),
+            "additionalProperty": additional_props,
+        }
+
+    # ---- founders (list of Person) ----
+    founders_in = data.get("founders", [])  # list of persons
+    founders = []
+    for f in founders_in:
+        founders.append({
+            "@type": "Person",
+            "name": f.get("name"),
+            "jobTitle": f.get("job_title"),
+            "worksFor": {"@id": store_id} if store_id else None,
+            "sameAs": f.get("same_as", []),
+        })
+
+    # ---- hasMap (object Map) ----
+    has_map_in = data.get("has_map")  # e.g. {"@type":"Map","@id":"https://schema.org/VenueMap","url":"..."}
+    has_map = None
+    if isinstance(has_map_in, dict):
+        has_map = {
+            "@type": has_map_in.get("@type") or "Map",
+            "@id": has_map_in.get("@id"),
+            "url": has_map_in.get("url"),
+        }
+    elif isinstance(has_map_in, str) and has_map_in.strip():
+        # if you only have a URL, still allow it (but your doc uses Map object)
+        has_map = {"@type": "Map", "url": has_map_in}
+
+    # ---- mainEntityOfPage ----
+    meop_in = data.get("main_entity_of_page") or {}
+    about_list = []
+    for a in meop_in.get("about", []):
+        about_list.append({
+            "@type": a.get("type") or a.get("@type") or "Thing",
+            "name": a.get("name"),
+            "sameAs": a.get("same_as") if a.get("same_as") is not None else a.get("sameAs"),
+        })
+
+    mentions_list = []
+    for m in meop_in.get("mentions", []):
+        mentions_list.append({
+            "@type": m.get("type") or m.get("@type") or "Thing",
+            "name": m.get("name"),
+            "sameAs": m.get("same_as") if m.get("same_as") is not None else m.get("sameAs"),
+        })
+
+    main_entity_of_page = None
+    if meop_in:
+        main_entity_of_page = {
+            "@type": "WebPage",
+            "name": meop_in.get("name"),
+            "url": meop_in.get("url") or data.get("site_url"),
+            "@id": meop_in.get("@id") or meop_in.get("id") or (data.get("site_url")),
+            "additionalType": meop_in.get("additional_type") if meop_in.get("additional_type") is not None else meop_in.get("additionalType", []),
+            "about": about_list,
+            "mentions": mentions_list,
+        }
+
+    # ---- FurnitureStore block ----
+    store_schema = {
+        "@context": "https://schema.org",
+        "@type": data.get("business_type") or "FurnitureStore",
+        "@id": store_id,  # not in your sample, but helps founders/links resolve cleanly
+        "makesOffer": makes_offer,
+        "name": data.get("org_name") or data.get("name"),
+        "description": data.get("description"),
+        "image": data.get("image"),
+        "priceRange": data.get("price_range"),
+        "telephone": data.get("telephone"),
+        "email": data.get("email"),
+        "address": {
+            "@type": "PostalAddress",
+            "streetAddress": data.get("street"),
+            "addressLocality": data.get("city"),
+            "addressRegion": data.get("state"),
+            "postalCode": data.get("zip"),
+            "addressCountry": data.get("country"),
+        },
+        "geo": {
+            "@type": "GeoCoordinates",
+            "latitude": data.get("lat"),
+            "longitude": data.get("lng"),
+        },
+        "hasMap": has_map,
+        "alternateName": data.get("alternate_names", []),
+        "areaServed": area_served,
+        "logo": data.get("logo"),
+        "openingHoursSpecification": data.get("opening_hours_spec", []),  # already shaped list of OpeningHoursSpecification
+        "aggregateRating": aggregate_rating,
+        "founder": founders,
+        "identifier": {
+            "@type": "PropertyValue",
+            "value": data.get("identifier_values", []),  # list of URLs like your doc
+        },
+        "sameAs": data.get("same_as", []),
+        "mainEntityOfPage": main_entity_of_page,
+    }
+
+    # ---- FAQPage block (2nd JSON-LD object) ----
+    faqs = data.get("faqs", [])  # list of {question, answer_html_or_text}
+    faq_schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": f.get("question"),
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": f.get("answer"),
+                },
+            }
+            for f in faqs
+        ],
+    }
+
+    # Return as two separate blocks (matches the document you shared)
+    return [
+        _clean_schema(store_schema),
+        _clean_schema(faq_schema),
     ]
 
-    if data.get("search_enabled"):
-        graph[0]["potentialAction"] = {
-            "@type": "SearchAction",
-            "target": data.get("search_url"),
-            "query-input": "required name=search_term_string"
-        }
-
-    return _clean_schema({
-        "@context": "https://schema.org",
-        "@graph": graph
-    })
 
 
 # -------------------------
