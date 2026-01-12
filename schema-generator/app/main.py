@@ -105,6 +105,12 @@ schema = {}
 if page_type == "Homepage":
     st.subheader("Homepage Schema (Universal: works for ANY business type)")
 
+    homepage_entity_type = st.radio(
+        "Homepage Entity Type (required)",
+        ["Organization", "LocalBusiness"],
+        help="Choose LocalBusiness ONLY if customers visit a physical location."
+        )
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -319,6 +325,7 @@ if page_type == "Homepage":
             main_entity_of_page_url = st.text_input("mainEntityOfPage URL (string)", value="")
 
     data = {
+        "homepage_entity_type": homepage_entity_type,
         "business_type": business_type,
         "site_url": site_url,
         "name": name,
@@ -822,3 +829,17 @@ st.download_button(
     file_name="schema.json",
     mime="application/json"
 )
+
+st.markdown("## Output")
+
+if isinstance(schema, list):
+    if output_mode == "JSON-LD":
+        st.code(json.dumps(schema, indent=2), language="json")
+    else:
+        html = "\n\n".join(to_script_tag(block) for block in schema)
+        st.code(html, language="html")
+else:
+    if output_mode == "JSON-LD":
+        st.code(json.dumps(schema, indent=2), language="json")
+    else:
+        st.code(to_script_tag(schema), language="html")
