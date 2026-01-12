@@ -1,3 +1,5 @@
+from utils.schema_helpers import to_script_tag
+
 import re
 
 
@@ -369,45 +371,61 @@ def _build_faq_schema(faqs):
 # -------------------------
 def homepage_schema(data: dict):
     """
-    UNIVERSAL Homepage JSON-LD generator that works for ANY business type.
+    UNIVERSAL Homepage JSON-LD generator.
 
-    Requirements:
-      - data["business_type"] is REQUIRED (no defaults)
+    Requires:
+      - data["homepage_entity_type"]: "Organization" or "LocalBusiness"
 
-    Returns:
-      List[dict] (one or more JSON-LD blocks)
+    Optional:
+      - data["business_type"]: LocalBusiness subtype (BeautySalon, Store, etc.)
     """
-    business_type = (data.get("business_type") or "").strip()
-    if not business_type:
-        raise ValueError("homepage_schema: 'business_type' is required (e.g. 'BeautySalon', 'LocalBusiness', 'Store').")
+
+    homepage_entity_type = (data.get("homepage_entity_type") or "").strip()
+
+    if homepage_entity_type not in ("Organization", "LocalBusiness"):
+        raise ValueError(
+            "homepage_schema: 'homepage_entity_type' must be 'Organization' or 'LocalBusiness'."
+        )
+
+    # Resolve final @type
+    if homepage_entity_type == "Organization":
+        business_type = "Organization"
+    else:
+        business_type = (data.get("business_type") or "LocalBusiness").strip()
 
     base_url = (data.get("site_url") or "").rstrip("/")
-    id_fragment = (data.get("id_fragment") or _slugify_type(business_type) or "business")
+
+    if homepage_entity_type == "Organization":
+        id_fragment = data.get("id_fragment") or "organization"
+    else:
+        id_fragment = data.get("id_fragment") or _slugify_type(business_type)
+
     entity_id = f"{base_url}/#{id_fragment}" if base_url else None
 
+    # -------------------------
     # Common builds
+    # -------------------------
     has_map = _build_has_map(data.get("has_map"))
     aggregate_rating = _build_aggregate_rating(data.get("aggregate_rating") or {})
     founders = _build_founders(data.get("founders") or [], entity_id)
     identifier = _build_identifier(data)
 
-    # Optional: WebPage object as mainEntityOfPage (MK Furnishings style)
     main_entity_of_page_webpage = _build_main_entity_of_page_webpage(
         data.get("main_entity_of_page") or {},
         fallback_url=data.get("site_url")
     )
 
-    # Optional: string URL mainEntityOfPage
     main_entity_of_page_url = (data.get("main_entity_of_page_url") or "").strip()
     main_entity_of_page = main_entity_of_page_url or main_entity_of_page_webpage
 
-    # Offers / Catalog modules
     makes_offer = _build_makes_offer(data.get("makes_offer"))
     has_offer_catalog = _build_has_offer_catalog(data)
 
-    # areaServed: pass-through schema-ready list/dict
     area_served = data.get("area_served", [])
 
+    # -------------------------
+    # Base entity
+    # -------------------------
     business_schema = {
         "@context": "https://schema.org",
         "@type": business_type,
@@ -418,50 +436,55 @@ def homepage_schema(data: dict):
         "description": data.get("description"),
         "image": data.get("image"),
         "logo": data.get("logo"),
-        "priceRange": data.get("price_range"),
-        "telephone": data.get("telephone"),
-        "email": data.get("email"),
         "url": data.get("site_url"),
-
-        "address": {
-            "@type": "PostalAddress",
-            "streetAddress": data.get("street"),
-            "addressLocality": data.get("city"),
-            "addressRegion": data.get("state"),
-            "postalCode": data.get("zip"),
-            "addressCountry": data.get("country"),
-        },
-        "geo": {
-            "@type": "GeoCoordinates",
-            "latitude": data.get("lat"),
-            "longitude": data.get("lng"),
-        },
-
-        "hasMap": has_map,
-        "openingHoursSpecification": data.get("opening_hours_spec", []),
 
         "sameAs": data.get("same_as", []),
         "alternateName": data.get("alternate_names", []),
 
-        "areaServed": area_served,
-        "aggregateRating": aggregate_rating,
-        "founder": founders,
-        "identifier": identifier,
         "mainEntityOfPage": main_entity_of_page,
 
-        # business-wide optional fields
         "knowsLanguage": data.get("knows_language"),
-        "additionalType": data.get("additional_types", []),  # ✅ ADDED
-        "knowsAbout": data.get("knows_about", []),           # ✅ ADDED
+        "additionalType": data.get("additional_types", []),
+        "knowsAbout": data.get("knows_about", []),
 
-        # modules
+        "founder": founders,
+        "identifier": identifier,
+
         "makesOffer": makes_offer,
         "hasOfferCatalog": has_offer_catalog,
     }
 
+    # -------------------------
+    # LocalBusiness-only fields
+    # -------------------------
+    if homepage_entity_type == "LocalBusiness":
+        business_schema.update({
+            "priceRange": data.get("price_range"),
+            "telephone": data.get("telephone"),
+            "email": data.get("email"),
+
+            "address": {
+                "@type": "PostalAddress",
+                "streetAddress": data.get("street"),
+                "addressLocality": data.get("city"),
+                "addressRegion": data.get("state"),
+                "postalCode": data.get("zip"),
+                "addressCountry": data.get("country"),
+            },
+            "geo": {
+                "@type": "GeoCoordinates",
+                "latitude": data.get("lat"),
+                "longitude": data.get("lng"),
+            },
+            "hasMap": has_map,
+            "openingHoursSpecification": data.get("opening_hours_spec", []),
+            "areaServed": area_served,
+            "aggregateRating": aggregate_rating,
+        })
+
     blocks = [_clean_schema(business_schema)]
 
-    # Optional separate WebSite block
+    # Optional WebSite block
     website_block = _build_website_schema(
         website_in=data.get("website_schema") or {},
         base_url=base_url,
@@ -845,3 +868,21 @@ def product_schema(data: dict):
         }
 
     return _clean_schema(schema)
+
+def render_schema_blocks(schema) -> str:
+    """
+    Accepts:
+      - dict (single schema)
+      - list[dict] (multiple schemas)
+    Returns JSON-LD <script> tags.
+    """
+    if not schema:
+        return ""
+
+    if isinstance(schema, dict):
+        return to_script_tag(schema)
+
+    if isinstance(schema, list):
+        return "\n\n".join(to_script_tag(block) for block in schema)
+
+    raise TypeError("render_schema_blocks expects dict or list of dicts")
