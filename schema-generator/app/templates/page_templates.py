@@ -594,43 +594,118 @@ def homepage_schema(data):
 # Service Page Schema
 # -------------------------
 def service_page_schema(data: dict):
+    """
+    Strong Service Page Schema
+    - WebPage
+    - Service (primary entity)
+    - Provider (Organization or LocalBusiness)
+    - Optional: Offer / OfferCatalog
+    - Optional: AggregateRating
+    - Optional: Breadcrumb
+    - Optional: FAQ
+    """
+
     url = (data.get("url") or "").rstrip("/")
-    page_id = f"{url}/#webpage" if url else None
-    service_id = f"{url}/#service" if url else None
+    if not url:
+        return {}
 
-    graph = [
-        {
-            "@type": "WebPage",
-            "@id": page_id,
-            "url": data.get("url"),
-            "name": data.get("service_name"),
-            "description": data.get("service_description"),
-            "isPartOf": {
-                "@type": "WebSite",
-                "name": data.get("site_name"),
-                "url": data.get("site_url")
-            },
-            "about": {"@id": service_id}
-        },
-        {
-            "@type": "Service",
-            "@id": service_id,
-            "name": data.get("service_name"),
-            "description": data.get("service_description"),
-            "url": data.get("url"),
-            "provider": {
-                "@type": data.get("provider_type") or "LocalBusiness",
-                "name": data.get("provider_name"),
-                "url": data.get("provider_url")
-            },
-            "areaServed": data.get("area_served")
+    page_id = f"{url}/#webpage"
+    service_id = f"{url}/#service"
+    provider_id = f"{data.get('provider_url', '').rstrip('/')}/#organization" if data.get("provider_url") else None
+
+    graph = []
+
+    # -------------------------
+    # Provider Entity
+    # -------------------------
+    provider = {
+        "@type": data.get("provider_type") or "Organization",
+        "@id": provider_id,
+        "name": data.get("provider_name"),
+        "url": data.get("provider_url"),
+        "logo": data.get("provider_logo"),
+        "sameAs": data.get("provider_same_as"),
+    }
+
+    if data.get("provider_phone"):
+        provider["telephone"] = data.get("provider_phone")
+
+    if data.get("provider_email"):
+        provider["email"] = data.get("provider_email")
+
+    if data.get("provider_address"):
+        provider["address"] = data.get("provider_address")
+
+    if data.get("provider_geo"):
+        provider["geo"] = data.get("provider_geo")
+
+    graph.append(provider)
+
+    # -------------------------
+    # Service Entity
+    # -------------------------
+    service = {
+        "@type": "Service",
+        "@id": service_id,
+        "name": data.get("service_name"),
+        "description": data.get("service_description"),
+        "url": url,
+        "provider": {"@id": provider_id},
+        "areaServed": data.get("area_served"),
+        "serviceType": data.get("service_type"),
+    }
+
+    # Offers (single offer)
+    if data.get("offer_price"):
+        service["offers"] = {
+            "@type": "Offer",
+            "price": data.get("offer_price"),
+            "priceCurrency": data.get("offer_currency") or "USD",
+            "availability": data.get("offer_availability") or "https://schema.org/InStock"
         }
-    ]
 
+    # Offer Catalog (multiple services)
+    offer_catalog = _build_has_offer_catalog(data)
+    if offer_catalog:
+        service["hasOfferCatalog"] = offer_catalog
+
+    # Aggregate Rating
+    if data.get("rating_enabled"):
+        rating_cfg = {
+            "rating_value": data.get("rating_value"),
+            "review_count": data.get("review_count"),
+            "best_rating": data.get("best_rating") or "5"
+        }
+        service["aggregateRating"] = _build_aggregate_rating(rating_cfg)
+
+    graph.append(service)
+
+    # -------------------------
+    # WebPage Entity
+    # -------------------------
+    webpage = {
+        "@type": "WebPage",
+        "@id": page_id,
+        "url": url,
+        "name": data.get("page_title") or data.get("service_name"),
+        "description": data.get("page_description") or data.get("service_description"),
+        "about": {"@id": service_id},
+        "isPartOf": {
+            "@type": "WebSite",
+            "name": data.get("site_name"),
+            "url": data.get("site_url")
+        }
+    }
+
+    graph.append(webpage)
+
+    # -------------------------
+    # Breadcrumb
+    # -------------------------
     if data.get("breadcrumb_enabled"):
         graph.append({
             "@type": "BreadcrumbList",
-            "@id": f"{url}/#breadcrumb" if url else None,
+            "@id": f"{url}/#breadcrumb",
             "itemListElement": [
                 {
                     "@type": "ListItem",
@@ -642,15 +717,21 @@ def service_page_schema(data: dict):
             ]
         })
 
+    # -------------------------
+    # FAQ
+    # -------------------------
     if data.get("faq_enabled"):
         graph.append({
             "@type": "FAQPage",
-            "@id": f"{url}/#faq" if url else None,
+            "@id": f"{url}/#faq",
             "mainEntity": [
                 {
                     "@type": "Question",
                     "name": f["question"],
-                    "acceptedAnswer": {"@type": "Answer", "text": f["answer"]}
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": f["answer"]
+                    }
                 }
                 for f in data.get("faqs", [])
             ]
