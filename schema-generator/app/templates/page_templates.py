@@ -113,12 +113,12 @@ def _build_aggregate_rating(rating_in: dict):
         })
 
     return {
-        "@type": "AggregateRating",
-        "name": rating_in.get("name"),
-        "ratingValue": rating_in.get("rating_value"),
-        "bestRating": rating_in.get("best_rating"),
-        "reviewCount": rating_in.get("review_count"),
-        "additionalProperty": additional_props,
+    "@type": "AggregateRating",
+    "name": rating_in.get("name"),
+    "ratingValue": float(rating_in.get("rating_value")) if rating_in.get("rating_value") else None,
+    "bestRating": float(rating_in.get("best_rating")) if rating_in.get("best_rating") else 5,
+    "reviewCount": int(rating_in.get("review_count")) if rating_in.get("review_count") else None,
+    "additionalProperty": additional_props,
     }
 
 
@@ -359,12 +359,34 @@ def _build_faq_schema(faqs):
             {
                 "@type": "Question",
                 "name": f.get("question"),
-                "acceptedAnswer": {"@type": "Answer", "text": f.get("answer")},
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": f.get("answer")
+                },
             }
             for f in faqs
         ],
     }
 
+def _normalize_area_served(area_in):
+    """
+    Accepts:
+      - None
+      - dict
+      - list[dict]
+    Always returns:
+      - list[dict] or None
+    """
+    if not area_in:
+        return None
+
+    if isinstance(area_in, dict):
+        return [area_in]
+
+    if isinstance(area_in, list):
+        return [a for a in area_in if isinstance(a, dict)]
+
+    return None
 
 # -------------------------
 # UNIVERSAL HOMEPAGE SCHEMA
@@ -634,7 +656,7 @@ def service_page_schema(data: dict):
     if data.get("provider_geo"):
         provider["geo"] = data.get("provider_geo")
 
-    # Attach Aggregate Rating safely to provider
+    # Aggregate Rating (corrected indentation)
     if data.get("rating_enabled") and provider_url:
         rating_cfg = {
             "rating_value": data.get("rating_value"),
@@ -658,7 +680,7 @@ def service_page_schema(data: dict):
         "url": url,
         "provider": {"@id": provider_id} if provider_id else None,
         "serviceType": data.get("service_type"),
-        "areaServed": data.get("area_served"),
+        "areaServed": _normalize_area_served(data.get("area_served")),
     }
 
     if data.get("alternate_name"):
@@ -718,22 +740,9 @@ def service_page_schema(data: dict):
     # -------------------------
     # FAQ
     # -------------------------
-    if data.get("faq_enabled") and data.get("faqs"):
-        graph.append({
-            "@type": "FAQPage",
-            "@id": f"{url}/#faq",
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": f["question"],
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": f["answer"]
-                    }
-                }
-                for f in data.get("faqs", [])
-            ]
-        })
+    faq_block = _build_faq_schema(data.get("faqs"))
+    if data.get("faq_enabled") and faq_block:
+        graph.append(faq_block)
 
     return _clean_schema({
         "@context": "https://schema.org",
