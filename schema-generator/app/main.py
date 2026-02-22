@@ -576,55 +576,108 @@ elif page_type == "Local Business":
 # SERVICE PAGE
 # -----------------------------------
 elif page_type == "Service Page":
-    st.subheader("Service Page Schema (WebPage + Service + FAQ + Breadcrumb)")
+    st.subheader("Service Page Schema (Advanced)")
 
     col1, col2 = st.columns(2)
 
+    # -------------------------
+    # Core Service
+    # -------------------------
     with col1:
         service_name = st.text_input("Service Name")
         service_description = st.text_area("Service Description")
+        service_type = st.text_input("Service Type (e.g. Managed IT Support)")
         url = st.text_input("Service Page URL")
-        provider_type = st.selectbox("Provider Type", ["LocalBusiness", "Organization", "ProfessionalService"])
+
+    # -------------------------
+    # Provider
+    # -------------------------
+        st.markdown("### Provider")
+        provider_type = st.selectbox("Provider Type", ["Organization", "LocalBusiness", "ProfessionalService"])
         provider_name = st.text_input("Provider Name")
         provider_url = st.text_input("Provider URL")
+        provider_logo = st.text_input("Provider Logo URL (optional)")
+        provider_phone = st.text_input("Provider Phone (optional)")
+        provider_email = st.text_input("Provider Email (optional)")
+        provider_same_as = clean_list(st.text_area("Provider sameAs Links (one per line)"))
 
+    # -------------------------
+    # Page / Website
+    # -------------------------
     with col2:
         site_name = st.text_input("Website Name (optional)")
         site_url = st.text_input("Website URL (optional)")
         area_served = st.text_input("Area Served (optional)")
 
-        breadcrumb_enabled = st.checkbox("Add BreadcrumbList (recommended)")
+        st.markdown("### Pricing (Optional)")
+        offer_price = st.text_input("Offer Price")
+        offer_currency = st.text_input("Currency", value="USD")
+        offer_availability = st.selectbox(
+            "Availability",
+            ["https://schema.org/InStock",
+             "https://schema.org/OutOfStock",
+             "https://schema.org/PreOrder"]
+        )
+
+        st.markdown("### Ratings (Optional)")
+        rating_enabled = st.checkbox("Add Aggregate Rating")
+        rating_value = review_count = ""
+        if rating_enabled:
+            rating_value = st.text_input("Rating Value", value="5")
+            review_count = st.text_input("Review Count", value="10")
+
+        st.markdown("### Breadcrumb")
+        breadcrumb_enabled = st.checkbox("Add BreadcrumbList")
         breadcrumbs = []
         if breadcrumb_enabled:
-            st.markdown("Enter breadcrumbs like: Name | URL (one per line)")
-            bc_lines = clean_list(st.text_area("Breadcrumbs"))
+            bc_lines = clean_list(st.text_area("Breadcrumbs (Name | URL per line)"))
             for line in bc_lines:
                 if "|" in line:
                     n, u = line.split("|", 1)
                     breadcrumbs.append({"name": n.strip(), "url": u.strip()})
 
-        faq_enabled = st.checkbox("Add FAQPage (recommended)")
+        st.markdown("### FAQ")
+        faq_enabled = st.checkbox("Add FAQPage")
         faqs = []
         if faq_enabled:
-            st.markdown("Enter FAQ like: Question | Answer (one per line)")
-            faq_lines = clean_list(st.text_area("FAQ"))
+            faq_lines = clean_list(st.text_area("FAQ (Question | Answer per line)"))
             for line in faq_lines:
                 if "|" in line:
                     q, a = line.split("|", 1)
                     faqs.append({"question": q.strip(), "answer": a.strip()})
 
+    # -------------------------
+    # Data sent to backend
+    # -------------------------
     data = {
         "service_name": service_name,
         "service_description": service_description,
+        "service_type": service_type,
         "url": url,
+
         "provider_type": provider_type,
         "provider_name": provider_name,
         "provider_url": provider_url,
+        "provider_logo": provider_logo,
+        "provider_phone": provider_phone,
+        "provider_email": provider_email,
+        "provider_same_as": provider_same_as,
+
         "site_name": site_name,
         "site_url": site_url,
         "area_served": {"@type": "Place", "name": area_served} if area_served else None,
+
+        "offer_price": offer_price,
+        "offer_currency": offer_currency,
+        "offer_availability": offer_availability,
+
+        "rating_enabled": rating_enabled,
+        "rating_value": rating_value,
+        "review_count": review_count,
+
         "breadcrumb_enabled": breadcrumb_enabled,
         "breadcrumbs": breadcrumbs,
+
         "faq_enabled": faq_enabled,
         "faqs": faqs
     }
