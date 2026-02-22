@@ -672,7 +672,10 @@ elif page_type == "Service Page":
 
         "site_name": site_name,
         "site_url": site_url,
-        "area_served": {"@type": "Place", "name": area_served} if area_served else None,
+        "area_served": {
+        "@type": area_type,
+        "name": area_name
+         } if area_name else None,
 
         "offer_price": offer_price,
         "offer_currency": offer_currency,
