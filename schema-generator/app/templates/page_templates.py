@@ -603,6 +603,7 @@ def service_page_schema(data: dict):
     - Optional: AggregateRating
     - Optional: Breadcrumb
     - Optional: FAQ
+    - Flexible areaServed type (City, AdministrativeArea, Country, Place)
     """
 
     url = (data.get("url") or "").rstrip("/")
@@ -611,7 +612,9 @@ def service_page_schema(data: dict):
 
     page_id = f"{url}/#webpage"
     service_id = f"{url}/#service"
-    provider_id = f"{data.get('provider_url', '').rstrip('/')}/#organization" if data.get("provider_url") else None
+
+    provider_url = (data.get("provider_url") or "").rstrip("/")
+    provider_id = f"{provider_url}/#organization" if provider_url else None
 
     graph = []
 
@@ -622,7 +625,7 @@ def service_page_schema(data: dict):
         "@type": data.get("provider_type") or "Organization",
         "@id": provider_id,
         "name": data.get("provider_name"),
-        "url": data.get("provider_url"),
+        "url": provider_url,
         "logo": data.get("provider_logo"),
         "sameAs": data.get("provider_same_as"),
     }
@@ -650,10 +653,14 @@ def service_page_schema(data: dict):
         "name": data.get("service_name"),
         "description": data.get("service_description"),
         "url": url,
-        "provider": {"@id": provider_id},
-        "areaServed": data.get("area_served"),
+        "provider": {"@id": provider_id} if provider_id else None,
         "serviceType": data.get("service_type"),
+        "areaServed": data.get("area_served"),
     }
+
+    # Optional alternateName
+    if data.get("alternate_name"):
+        service["alternateName"] = data.get("alternate_name")
 
     # Offers (single offer)
     if data.get("offer_price"):
@@ -676,7 +683,9 @@ def service_page_schema(data: dict):
             "review_count": data.get("review_count"),
             "best_rating": data.get("best_rating") or "5"
         }
-        service["aggregateRating"] = _build_aggregate_rating(rating_cfg)
+        rating = _build_aggregate_rating(rating_cfg)
+        if rating:
+            service["aggregateRating"] = rating
 
     graph.append(service)
 
@@ -694,7 +703,7 @@ def service_page_schema(data: dict):
             "@type": "WebSite",
             "name": data.get("site_name"),
             "url": data.get("site_url")
-        }
+        } if data.get("site_url") else None
     }
 
     graph.append(webpage)
@@ -702,7 +711,7 @@ def service_page_schema(data: dict):
     # -------------------------
     # Breadcrumb
     # -------------------------
-    if data.get("breadcrumb_enabled"):
+    if data.get("breadcrumb_enabled") and data.get("breadcrumbs"):
         graph.append({
             "@type": "BreadcrumbList",
             "@id": f"{url}/#breadcrumb",
@@ -716,6 +725,31 @@ def service_page_schema(data: dict):
                 for i, b in enumerate(data.get("breadcrumbs", []))
             ]
         })
+
+    # -------------------------
+    # FAQ
+    # -------------------------
+    if data.get("faq_enabled") and data.get("faqs"):
+        graph.append({
+            "@type": "FAQPage",
+            "@id": f"{url}/#faq",
+            "mainEntity": [
+                {
+                    "@type": "Question",
+                    "name": f["question"],
+                    "acceptedAnswer": {
+                        "@type": "Answer",
+                        "text": f["answer"]
+                    }
+                }
+                for f in data.get("faqs", [])
+            ]
+        })
+
+    return _clean_schema({
+        "@context": "https://schema.org",
+        "@graph": graph
+    })
 
     # -------------------------
     # FAQ
