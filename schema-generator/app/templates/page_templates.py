@@ -596,14 +596,6 @@ def homepage_schema(data):
 def service_page_schema(data: dict):
     """
     Strong Service Page Schema
-    - WebPage
-    - Service (primary entity)
-    - Provider (Organization or LocalBusiness)
-    - Optional: Offer / OfferCatalog
-    - Optional: AggregateRating
-    - Optional: Breadcrumb
-    - Optional: FAQ
-    - Flexible areaServed type (City, AdministrativeArea, Country, Place)
     """
 
     url = (data.get("url") or "").rstrip("/")
@@ -642,6 +634,17 @@ def service_page_schema(data: dict):
     if data.get("provider_geo"):
         provider["geo"] = data.get("provider_geo")
 
+    # Attach Aggregate Rating safely to provider
+    if data.get("rating_enabled") and provider_url:
+        rating_cfg = {
+            "rating_value": data.get("rating_value"),
+            "review_count": data.get("review_count"),
+            "best_rating": "5"
+        }
+        rating = _build_aggregate_rating(rating_cfg)
+        if rating:
+            provider["aggregateRating"] = rating
+
     graph.append(provider)
 
     # -------------------------
@@ -658,11 +661,9 @@ def service_page_schema(data: dict):
         "areaServed": data.get("area_served"),
     }
 
-    # Optional alternateName
     if data.get("alternate_name"):
         service["alternateName"] = data.get("alternate_name")
 
-    # Offers (single offer)
     if data.get("offer_price"):
         service["offers"] = {
             "@type": "Offer",
@@ -671,21 +672,9 @@ def service_page_schema(data: dict):
             "availability": data.get("offer_availability") or "https://schema.org/InStock"
         }
 
-    # Offer Catalog (multiple services)
     offer_catalog = _build_has_offer_catalog(data)
     if offer_catalog:
         service["hasOfferCatalog"] = offer_catalog
-
-    # Aggregate Rating
-    if data.get("rating_enabled") and provider_url:
-     rating_cfg = {
-        "rating_value": data.get("rating_value"),
-        "review_count": data.get("review_count"),
-        "best_rating": "5"
-    }
-    rating = _build_aggregate_rating(rating_cfg)
-    if rating:
-        provider["aggregateRating"] = rating
 
     graph.append(service)
 
@@ -730,31 +719,6 @@ def service_page_schema(data: dict):
     # FAQ
     # -------------------------
     if data.get("faq_enabled") and data.get("faqs"):
-        graph.append({
-            "@type": "FAQPage",
-            "@id": f"{url}/#faq",
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": f["question"],
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": f["answer"]
-                    }
-                }
-                for f in data.get("faqs", [])
-            ]
-        })
-
-    return _clean_schema({
-        "@context": "https://schema.org",
-        "@graph": graph
-    })
-
-    # -------------------------
-    # FAQ
-    # -------------------------
-    if data.get("faq_enabled"):
         graph.append({
             "@type": "FAQPage",
             "@id": f"{url}/#faq",
