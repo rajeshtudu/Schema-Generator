@@ -607,7 +607,14 @@ elif page_type == "Service Page":
     with col2:
         site_name = st.text_input("Website Name (optional)")
         site_url = st.text_input("Website URL (optional)")
-        area_served = st.text_input("Area Served (optional)")
+        
+        st.markdown("### Area Served (optional)")
+        area_type = st.selectbox(
+            "Area Type",
+            ["City", "AdministrativeArea", "Country", "Place"],
+            index=0  # Default to City
+        )
+        area_name = st.text_input("Area Name (e.g. Sydney)")
 
         st.markdown("### Pricing (Optional)")
         offer_price = st.text_input("Offer Price")
