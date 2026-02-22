@@ -677,15 +677,15 @@ def service_page_schema(data: dict):
         service["hasOfferCatalog"] = offer_catalog
 
     # Aggregate Rating
-    if data.get("rating_enabled"):
-        rating_cfg = {
-            "rating_value": data.get("rating_value"),
-            "review_count": data.get("review_count"),
-            "best_rating": data.get("best_rating") or "5"
-        }
-        rating = _build_aggregate_rating(rating_cfg)
-        if rating:
-            service["aggregateRating"] = rating
+    if data.get("rating_enabled") and provider_url:
+     rating_cfg = {
+        "rating_value": data.get("rating_value"),
+        "review_count": data.get("review_count"),
+        "best_rating": "5"
+    }
+    rating = _build_aggregate_rating(rating_cfg)
+    if rating:
+        provider["aggregateRating"] = rating
 
     graph.append(service)
 
