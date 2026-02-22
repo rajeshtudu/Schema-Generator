@@ -964,13 +964,12 @@ def product_schema(data: dict):
         schema["mpn"] = data.get("mpn")
 
     if data.get("product_rating_enabled"):
-        rating = _build_aggregate_rating({
-        "rating_value": data.get("product_rating_value"),
-        "review_count": data.get("product_review_count"),
-        "best_rating": data.get("product_best_rating") or "5"
-        })
-    if rating:
-        schema["aggregateRating"] = rating
+        schema["aggregateRating"] = {
+            "@type": "AggregateRating",
+            "ratingValue": data.get("product_rating_value"),
+            "reviewCount": data.get("product_review_count"),
+            "bestRating": data.get("product_best_rating") or "5"
+        }
 
     offer = schema["offers"]
 
