@@ -496,35 +496,22 @@ def homepage_schema(data):
     if data.get("opening_hours_spec"):
         entity["openingHoursSpecification"] = data["opening_hours_spec"]
 
-    # Area served
-    if data.get("area_served"):
-        entity["areaServed"] = data["area_served"]
+    # Area served (normalized to list)
+    entity["areaServed"] = _normalize_area_served(data.get("area_served"))
 
     # Identifier
-    if data.get("identifier_property_id") and data.get("identifier_value"):
-        entity["identifier"] = {
-            "@type": "PropertyValue",
-            "propertyID": data["identifier_property_id"],
-            "value": data["identifier_value"],
-        }
-    elif data.get("identifier_values"):
-        entity["identifier"] = data["identifier_values"]
+    identifier = _build_identifier(data)
+    if identifier:
+        entity["identifier"] = identifier
 
     # hasMap
     if data.get("has_map"):
         entity["hasMap"] = data["has_map"]
 
     # makesOffer
-    if data.get("makes_offer"):
-        entity["makesOffer"] = [
-            {
-                "@type": "Offer",
-                "name": o["name"],
-                "description": o["description"],
-                "url": o["url"],
-            }
-            for o in data["makes_offer"]
-        ]
+    makes_offer = _build_makes_offer(data.get("makes_offer"))
+    if makes_offer:
+        entity["makesOffer"] = makes_offer
 
     # hasOfferCatalog
     if data.get("offer_catalog_services"):
@@ -592,22 +579,9 @@ def homepage_schema(data):
 
     # FAQPage
     if data.get("faqs"):
-        faq_block = {
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": f["question"],
-                    "acceptedAnswer": {
-                        "@type": "Answer",
-                        "text": f["answer"],
-                    },
-                }
-                for f in data["faqs"]
-            ],
-        }
-        blocks.append(faq_block)
+        faq_block = _build_faq_schema(data.get("faqs"))
+        if faq_block:
+            blocks.append(faq_block)
 
     return blocks if len(blocks) > 1 else entity
 
@@ -815,19 +789,9 @@ def collection_schema(data: dict):
             ]
         })
 
-    if data.get("faq_enabled"):
-        graph.append({
-            "@type": "FAQPage",
-            "@id": f"{url}/#faq" if url else None,
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": f["question"],
-                    "acceptedAnswer": {"@type": "Answer", "text": f["answer"]}
-                }
-                for f in data.get("faqs", [])
-            ]
-        })
+    faq_block = _build_faq_schema(data.get("faqs"))
+    if data.get("faq_enabled") and faq_block:
+        graph.append(faq_block)
 
     return _clean_schema({
         "@context": "https://schema.org",
@@ -1000,12 +964,13 @@ def product_schema(data: dict):
         schema["mpn"] = data.get("mpn")
 
     if data.get("product_rating_enabled"):
-        schema["aggregateRating"] = {
-            "@type": "AggregateRating",
-            "ratingValue": data.get("product_rating_value"),
-            "reviewCount": data.get("product_review_count"),
-            "bestRating": data.get("product_best_rating") or "5"
-        }
+        rating = _build_aggregate_rating({
+        "rating_value": data.get("product_rating_value"),
+        "review_count": data.get("product_review_count"),
+        "best_rating": data.get("product_best_rating") or "5"
+        })
+    if rating:
+        schema["aggregateRating"] = rating
 
     offer = schema["offers"]
 
